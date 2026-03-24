@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useRef, useCallback } from 'react';
 import type { KPIData, Scenario, DateRange } from '../types';
-import { Save, Layers, Database, Calculator, Download, Upload, Lock, Unlock, Plus, Search, ChevronDown } from 'lucide-react';
+import { Save, Layers, Database, Calculator, Download, Upload, Lock, Unlock, Plus, Search, ChevronDown, Trash2 } from 'lucide-react';
 import { getMonthsInRange } from '../utils/dateRange';
 import { apiService } from '../services/api';
 import * as XLSX from 'xlsx';
@@ -14,6 +14,7 @@ interface SpreadsheetViewProps {
     scenarios: Record<string, Scenario>;
     activeScenarioId: string;
     onScenarioAdd: (name: string) => void;
+    onScenarioDelete?: (id: string, e?: React.MouseEvent) => void;
     baselineScenarioId?: string;
     baseValues?: Record<string, number[]>;
     calculatedScenarioValues?: Record<string, Record<string, number[]>>;
@@ -50,6 +51,7 @@ const SpreadsheetView: React.FC<SpreadsheetViewProps> = ({
     scenarios,
     activeScenarioId,
     onScenarioAdd,
+    onScenarioDelete,
     baselineScenarioId,
     baseValues = {},
     calculatedScenarioValues = {},
@@ -743,7 +745,19 @@ const SpreadsheetView: React.FC<SpreadsheetViewProps> = ({
                                                         >
                                                             <div style={{ width: 14, height: 14, borderRadius: '50%', border: isSelected ? '4px solid #1D4ED8' : '1px solid #D0D5DD', background: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                                                             </div>
-                                                            <span style={{ color: isSelected ? '#1D4ED8' : '#344054', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.name}</span>
+                                                            <span style={{ color: isSelected ? '#1D4ED8' : '#344054', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{s.name}</span>
+                                                            {s.id !== 'base' && onScenarioDelete && (
+                                                                <Trash2 
+                                                                    size={14} 
+                                                                    style={{ color: '#F87171', cursor: 'pointer', opacity: 0.7 }}
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        onScenarioDelete(s.id, e as unknown as React.MouseEvent);
+                                                                    }}
+                                                                    onMouseEnter={(e) => (e.currentTarget.style.opacity = '1')}
+                                                                    onMouseLeave={(e) => (e.currentTarget.style.opacity = '0.7')}
+                                                                />
+                                                            )}
                                                         </div>
                                                     );
                                                 })}
@@ -930,16 +944,28 @@ const SpreadsheetView: React.FC<SpreadsheetViewProps> = ({
                                                         <input
                                                             className={`sheet-cell-input ${isFormula ? 'formula-cell' : ''} ${isRowParent ? 'parent-val' : 'leaf-val'}`}
                                                             value={cellEditing ? editText : getCellDisplayValue(kpi, idx, isLogicalLeaf)}
-                                                            readOnly={false}
+                                                            readOnly={kpi.isLocked || !!kpi.lockedMonths?.[idx]}
                                                             onChange={(e) => {
-                                                                if (cellEditing) {
+                                                                if (cellEditing && !kpi.isLocked && !kpi.lockedMonths?.[idx]) {
                                                                     setEditText(e.target.value);
                                                                     updateSuggestions(e.target.value, e.target as HTMLInputElement);
                                                                 }
                                                             }}
-                                                            onFocus={() => handleCellFocus(kpi.id, idx)}
-                                                            onBlur={() => handleCellBlur(kpi.id, idx)}
-                                                            onKeyDown={(e) => handleCellKeyDown(e, kpi.id, idx)}
+                                                            onFocus={() => {
+                                                                if (!kpi.isLocked && !kpi.lockedMonths?.[idx]) {
+                                                                    handleCellFocus(kpi.id, idx);
+                                                                }
+                                                            }}
+                                                            onBlur={() => {
+                                                                if (!kpi.isLocked && !kpi.lockedMonths?.[idx]) {
+                                                                    handleCellBlur(kpi.id, idx);
+                                                                }
+                                                            }}
+                                                            onKeyDown={(e) => {
+                                                                if (!kpi.isLocked && !kpi.lockedMonths?.[idx]) {
+                                                                    handleCellKeyDown(e, kpi.id, idx);
+                                                                }
+                                                            }}
                                                         />
                                                         {inDrag && <div className="fill-highlight" />}
                                                         <div className="fill-handle" onMouseDown={(e) => handleFillHandleMouseDown(kpi.id, idx, e)} />
@@ -952,11 +978,17 @@ const SpreadsheetView: React.FC<SpreadsheetViewProps> = ({
                                                 <input
                                                     className={`sheet-cell-input total-val ${isRowParent ? 'parent-val' : 'leaf-val'}`}
                                                     value={isEditing('total') ? editText : getFullYearDisplayValue(kpi)}
-                                                    readOnly={false}
-                                                    onChange={(e) => isEditing('total') && setEditText(e.target.value)}
-                                                    onFocus={() => handleCellFocus(kpi.id, 'total')}
-                                                    onBlur={() => handleCellBlur(kpi.id, 'total')}
-                                                    onKeyDown={(e) => handleCellKeyDown(e, kpi.id, 'total')}
+                                                    readOnly={kpi.isLocked}
+                                                    onChange={(e) => !kpi.isLocked && isEditing('total') && setEditText(e.target.value)}
+                                                    onFocus={() => {
+                                                        if (!kpi.isLocked) handleCellFocus(kpi.id, 'total');
+                                                    }}
+                                                    onBlur={() => {
+                                                        if (!kpi.isLocked) handleCellBlur(kpi.id, 'total');
+                                                    }}
+                                                    onKeyDown={(e) => {
+                                                        if (!kpi.isLocked) handleCellKeyDown(e, kpi.id, 'total');
+                                                    }}
                                                     style={{ fontWeight: kpi.fullYearOverride != null ? 600 : 'normal' }}
                                                 />
                                             </td>

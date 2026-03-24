@@ -81,51 +81,109 @@ class KPICalculator:
         return {kid: self.results[kid].tolist() for kid in self.results}, list(self.impacted_kpis)
 
 
+    def _is_mutable(self, node_id: str, month_idx: int) -> bool:
+        node = self.kpis.get(node_id)
+        if not node: return False
+        if node.get('isLocked'): return False
+        
+        lm = node.get('lockedMonths')
+        if isinstance(lm, list):
+            if month_idx < len(lm) and lm[month_idx]:
+                return False
+        elif isinstance(lm, dict):
+            if lm.get(str(month_idx)):
+                return False
+        elif lm:
+            return False
+            
+        return True
+
     def _distribute_top_down(self, parent_id: str, month_idx: int, target_value: float):
         kpi = self.kpis.get(parent_id)
         if not kpi or not kpi.get('children'):
             return
 
-        formula = kpi.get('formula')
-        if formula not in ['SUM', 'NONE', None, '']:
+        formula = kpi.get('formula', 'SUM')
+        if formula not in ['SUM', 'NONE', None, '', 'AVERAGE', 'PRODUCT']:
             return
 
         child_ids = kpi['children']
         
-        def _is_mutable(cid: str) -> bool:
-            ckpi = self.kpis.get(cid, {})
-            has_monthly = f"{cid}-{month_idx}" in self.monthly_overrides_set
-            has_fy = ckpi.get('fullYearOverride') is not None
-            has_sim = ckpi.get('simulationValue', 0) != 0
-            is_locked = ckpi.get('isLocked', False)
-            if is_locked:
-                locked_months = ckpi.get('lockedMonths', [])
-                if not locked_months or month_idx in locked_months:
-                    return False
-            return not (has_monthly or has_fy or has_sim)
-
-        mutable_children = [cid for cid in child_ids if _is_mutable(cid)]
+        mutable_children = [cid for cid in child_ids if self._is_mutable(cid, month_idx)]
         if not mutable_children:
             return
 
-        current_sum = sum(self.results[cid][month_idx] for cid in child_ids)
-        diff = target_value - current_sum
-        
-        if abs(diff) < 1e-9:
-            return
+        if formula == 'AVERAGE':
+            target_sum = target_value * len(child_ids)
+            current_sum = sum(self.results[cid][month_idx] for cid in child_ids)
+            diff = target_sum - current_sum
+            
+            if abs(diff) < 1e-9:
+                return
 
-        current_mutable_sum = sum(self.results[cid][month_idx] for cid in mutable_children)
-        
-        if abs(current_mutable_sum) > 1e-9:
+            current_mutable_sum = sum(self.results[cid][month_idx] for cid in mutable_children)
+            if abs(current_mutable_sum) > 1e-9:
+                for cid in mutable_children:
+                    proportion = self.results[cid][month_idx] / current_mutable_sum
+                    self.results[cid][month_idx] += (diff * proportion)
+                    self._distribute_top_down(cid, month_idx, self.results[cid][month_idx])
+            else:
+                even_diff = diff / len(mutable_children)
+                for cid in mutable_children:
+                    self.results[cid][month_idx] += even_diff
+                    self._distribute_top_down(cid, month_idx, self.results[cid][month_idx])
+
+        elif formula == 'PRODUCT':
+            current_product = np.prod([self.results[cid][month_idx] for cid in child_ids])
+            if abs(current_product) < 1e-9 and abs(target_value) > 1e-9:
+                non_mut_vals = [self.results[cid][month_idx] for cid in child_ids if cid not in mutable_children]
+                non_mut_prod = np.prod(non_mut_vals) if non_mut_vals else 1.0
+                if abs(non_mut_prod) < 1e-9:
+                    return # Impossible to reach target if locked child is 0
+                    
+                target_mut_prod = target_value / non_mut_prod
+                if target_mut_prod < 0 and len(mutable_children) % 2 == 0:
+                    return # Mathematically impossible with real numbers
+                
+                sign = -1 if target_mut_prod < 0 else 1
+                root = sign * (abs(target_mut_prod) ** (1.0 / len(mutable_children)))
+                for cid in mutable_children:
+                    self.results[cid][month_idx] = root
+                    self._distribute_top_down(cid, month_idx, self.results[cid][month_idx])
+                return
+
+            ratio = target_value / current_product if abs(current_product) > 1e-9 else 1
+            if abs(ratio - 1) < 1e-9:
+                return
+
+            if ratio < 0 and len(mutable_children) % 2 == 0:
+                return # Cannot do even roots of negative numbers
+
+            sign = -1 if ratio < 0 else 1
+            factor = sign * (abs(ratio) ** (1.0 / len(mutable_children)))
             for cid in mutable_children:
-                proportion = self.results[cid][month_idx] / current_mutable_sum
-                self.results[cid][month_idx] += (diff * proportion)
+                self.results[cid][month_idx] *= factor
                 self._distribute_top_down(cid, month_idx, self.results[cid][month_idx])
-        else:
-            even_diff = diff / len(mutable_children)
-            for cid in mutable_children:
-                self.results[cid][month_idx] += even_diff
-                self._distribute_top_down(cid, month_idx, self.results[cid][month_idx])
+
+        else: # SUM and NONE
+            current_sum = sum(self.results[cid][month_idx] for cid in child_ids)
+            diff = target_value - current_sum
+            
+            if abs(diff) < 1e-9:
+                return
+
+            current_mutable_sum = sum(self.results[cid][month_idx] for cid in mutable_children)
+            
+            if abs(current_mutable_sum) > 1e-9:
+                for cid in mutable_children:
+                    proportion = self.results[cid][month_idx] / current_mutable_sum
+                    self.results[cid][month_idx] += (diff * proportion)
+                    self._distribute_top_down(cid, month_idx, self.results[cid][month_idx])
+            else:
+                even_diff = diff / len(mutable_children)
+                for cid in mutable_children:
+                    self.results[cid][month_idx] += even_diff
+                    self._distribute_top_down(cid, month_idx, self.results[cid][month_idx])
 
     def _eval_formula(self, formula: str, month_idx: int, depth: int = 0) -> float:
         # Prevent runaway recursion
@@ -163,6 +221,9 @@ class KPICalculator:
 
     def _compute_node(self, id: str, specific_month: Optional[int] = None, depth: int = 0):
         if depth > 50 or id in self.computing_nodes:
+            return
+            
+        if specific_month is None and id in self.computed_nodes:
             return
             
         kpi = self.kpis.get(id)

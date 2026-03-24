@@ -7,7 +7,7 @@
 [36m[1mΓÇï[22m[39m
 [36m[1mΓ¥» Flags[22m[39m
   accountId: 68ac3e93ae89461d68b40c85
-  deployId: 69b9afa9c6f5b87120f0fecf
+  deployId: 69baa9924751ff529132313b
 [36m[1mΓÇï[22m[39m
 [36m[1mΓ¥» Current directory[22m[39m
   D:\direacted graph
@@ -32,60 +32,43 @@ transforming...
 rendering chunks...
 computing gzip size...
 [2mdist/[22m[32mindex.html                 [39m[1m[2m    0.47 kB[22m[1m[22m[2m Γöé gzip:   0.30 kB[22m
-[2mdist/[22m[35massets/index-CMUp84ir.css  [39m[1m[2m   37.91 kB[22m[1m[22m[2m Γöé gzip:   7.39 kB[22m
-[2mdist/[22m[36massets/index-DbHk43wP.js   [39m[1m[33m1,256.85 kB[39m[22m[2m Γöé gzip: 395.08 kB[22m
-[32mΓ£ô built in 26.24s[39m
-node.exe : [33m
-At C:\Users\ASUS\AppData\Roaming\npm\netlify.ps1:24 char:5
-+     & "node$exe"  "$basedir/node_modules/netlify-cli/bin/run.js" $arg ...
-+     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    + CategoryInfo          : NotSpecified: ([33m:String) [], RemoteException
-    + FullyQualifiedErrorId : NativeCommandError
- 
-(!) Some chunks are larger than 500 kB after minification. Consider:
-- Using dynamic import() to code-split the application
-- Use build.rollupOptions.output.manualChunks to improve chunking: 
-https://rollupjs.org/configuration-options/#output-manualchunks
-- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.[39m
+[2mdist/[22m[35massets/index-ata6yS-k.css  [39m[1m[2m   37.88 kB[22m[1m[22m[2m Γöé gzip:   7.37 kB[22m
+[2mdist/[22m[36massets/index-DbKAYg7N.js   [39m[1m[33m1,257.96 kB[39m[22m[2m Γöé gzip: 395.44 kB[22m
+[32mΓ£ô built in 20.13s[39m
 ΓÇï
-[90m(build.command completed in 36.4s)[39m
+[90m(build.command completed in 26.6s)[39m
 
 Deploying to Netlify
 ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 
 [32mDeploy path: [39mD:\direacted graph\dist
 
-[33mΓáï[39m Uploading blobs to deploy store...
-
-[32mΓ£ö[39m Finished uploading blobs to deploy store
-[33mΓáï[39m Hashing files...
-[33mΓáï[39m Looking for a functions cache...
-[32mΓ£ö[39m No cached functions were found
-[32mΓ£ö[39m Finished hashing 
-[33mΓáï[39m CDN diffing files...
-[32mΓ£ö[39m CDN requesting 0 files
-[33mΓáï[39m Uploading 0 files
-[32mΓ£ö[39m Finished uploading 0 assets
-[33mΓáï[39m Waiting for deploy to go live...
-[32mΓ£ö[39m Deploy is live!
 [96m[1mΓÇï[22m[39m
 [96m[1mNetlify Build Complete                                        [22m[39m
 [96m[1mΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ[22m[39m
 ΓÇï
-[90m(Netlify Build completed in 43.1s)[39m
+[90m(Netlify Build completed in 35.4s)[39m
 
 ≡ƒÜÇ Deploy complete
 ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 
-  Γò¡ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ Γ¼Ñ  Production deploy is live Γ¼ÑΓÇë ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓò«
-  Γöé                                                                          Γöé
-  Γöé   Deployed to production URL: https://decomposition-tree-2.netlify.app   Γöé
-  Γöé                                                                          Γöé
-  Γöé                            Unique deploy URL:                            Γöé
-  Γöé    https://69b9afa9c6f5b87120f0fecf--decomposition-tree-2.netlify.app    Γöé
-  Γöé                                                                          Γöé
-  Γò░ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓò»
+Γò¡ΓöÇΓöÇΓöÇ Γ¼Ñ  Production  ΓöÇΓöÇΓöÇΓò«
+Γöé                      Γöé
+Γöé     Deployed to      Γöé
+Γöé   production URL:    Γöé
+Γöé   https://decompos   Γöé
+Γöé   ition-tree-2.net   Γöé
+Γöé       lify.app       Γöé
+Γöé                      Γöé
+Γöé    Unique deploy     Γöé
+Γöé   URL: https://69b   Γöé
+Γöé   aa9924751ff52913   Γöé
+Γöé   2313b--decomposi   Γöé
+Γöé   tion-tree-2.netl   Γöé
+Γöé       ify.app        Γöé
+Γöé                      Γöé
+Γò░ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓò»
 
-[32mBuild logs: [39m        https://app.netlify.com/projects/decomposition-tree-2/deploys/69b9afa9c6f5b87120f0fecf
+[32mBuild logs: [39m        https://app.netlify.com/projects/decomposition-tree-2/deploys/69baa9924751ff529132313b
 [32mFunction logs: [39m     https://app.netlify.com/projects/decomposition-tree-2/logs/functions
 [32mEdge function Logs: [39mhttps://app.netlify.com/projects/decomposition-tree-2/logs/edge-functions

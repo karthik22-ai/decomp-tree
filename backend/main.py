@@ -50,6 +50,10 @@ async def root():
 @app.post("/calculate")
 async def calculate(request: CalculationRequest):
     try:
+        import json
+        with open("calculate_payload_trace.json", "w") as f:
+            f.write(json.dumps(request.dict(), indent=2))
+            
         calculator = KPICalculator(request.kpis, request.dateRange)
         results, impacted = calculator.calculate()
         return sanitize_for_json({"results": results, "impactedKpis": impacted})
@@ -92,4 +96,4 @@ async def promote_sheet(request: PromotionRequest):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

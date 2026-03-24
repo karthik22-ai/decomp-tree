@@ -52,6 +52,7 @@ const SimulationCanvasInner = ({
     // activeScenarioId, // unused but kept in interface just in case
     onScenarioSelect,
     onScenarioAdd,
+    onScenarioDelete,
     valueDisplayType,
     baselineScenarioId,
     setAppState,
@@ -415,6 +416,19 @@ const SimulationCanvasInner = ({
                                                                     <div style={{ width: 12, height: 12, borderRadius: '50%', border: isSelected ? '3.5px solid #3b82f6' : '1px solid #cbd5e1', background: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                                                                     </div>
                                                                     <span style={{ color: isSelected ? '#3b82f6' : '#334155', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.name}</span>
+                                                                    {s.id !== 'base' && (
+                                                                        <Trash2 
+                                                                            size={14} 
+                                                                            color="#ef4444" 
+                                                                            style={{ cursor: 'pointer', opacity: 0.6, marginLeft: 'auto' }}
+                                                                            onClick={(e) => {
+                                                                                e.stopPropagation();
+                                                                                if (onScenarioDelete) onScenarioDelete(s.id, e);
+                                                                            }}
+                                                                            onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
+                                                                            onMouseLeave={(e) => e.currentTarget.style.opacity = '0.6'}
+                                                                        />
+                                                                    )}
                                                                 </div>
                                                             );
                                                         })}
@@ -783,6 +797,44 @@ const SimulationCanvas: React.FC<SimulationCanvasProps> = ({ projectId, isSample
         }));
     }, [kpis]);
 
+    const onScenarioDelete = useCallback((id: string, e?: React.MouseEvent) => {
+        if (e) e.stopPropagation();
+        if (id === 'base') {
+            alert("Cannot delete the Base Scenario.");
+            return;
+        }
+        if (!confirm("Are you sure you want to delete this scenario?")) return;
+
+        setAppState(prev => {
+            const newScenarios = { ...prev.scenarios };
+            delete newScenarios[id];
+
+            // Update active/baseline scenario if needed
+            const remainingIds = Object.keys(newScenarios);
+            const nextActiveId = prev.activeScenarioId === id 
+                ? (remainingIds.includes('base') ? 'base' : remainingIds[0]) 
+                : prev.activeScenarioId;
+            const nextBaselineId = prev.baselineScenarioId === id
+                ? (remainingIds.includes('base') ? 'base' : remainingIds[0])
+                : prev.baselineScenarioId;
+
+            // Update spreadsheet selected scenarios
+            const nextSpreadsheetSelected = prev.spreadsheetSelectedScenarios 
+                ? prev.spreadsheetSelectedScenarios.filter((sid: string) => sid !== id)
+                : undefined;
+
+            return {
+                ...prev,
+                scenarios: newScenarios,
+                activeScenarioId: nextActiveId,
+                baselineScenarioId: nextBaselineId,
+                spreadsheetSelectedScenarios: nextSpreadsheetSelected && nextSpreadsheetSelected.length > 0 
+                    ? nextSpreadsheetSelected 
+                    : [nextActiveId]
+            };
+        });
+    }, []);
+
     const handleMakeBaseScenario = useCallback(() => {
         setAppState(prev => {
             if (prev.activeScenarioId === 'base') return prev;
@@ -1048,15 +1100,21 @@ const SimulationCanvas: React.FC<SimulationCanvasProps> = ({ projectId, isSample
                     const nodeData = next[nodeId];
                     if (!nodeData || !nodeData.children || nodeData.children.length === 0) return;
                     
-                    const childIds = nodeData.children;
-                    const oldTotal = childIds.reduce((sum, cid) => sum + (calculatedValues[cid]?.[monthIdx] ?? 0), 0);
+                    const mutableChildren = nodeData.children.filter(cid => {
+                        const c = next[cid];
+                        return c && !c.isLocked && !c.lockedMonths?.[monthIdx];
+                    });
+
+                    if (mutableChildren.length === 0) return;
                     
-                    childIds.forEach(cid => {
+                    const oldTotal = mutableChildren.reduce((sum, cid) => sum + (calculatedValues[cid]?.[monthIdx] ?? 0), 0);
+                    
+                    mutableChildren.forEach(cid => {
                         const cNode = next[cid];
                         if (!cNode) return;
                         
                         const cOldVal = calculatedValues[cid]?.[monthIdx] ?? 0;
-                        const cDelta = oldTotal === 0 ? (currentDelta / childIds.length) : currentDelta * (cOldVal / oldTotal);
+                        const cDelta = oldTotal === 0 ? (currentDelta / mutableChildren.length) : currentDelta * (cOldVal / oldTotal);
                         
                         const cOverrides = [...(cNode.monthlyOverrides || Array(12).fill(undefined))];
                         const prevOverride = typeof cOverrides[monthIdx] === 'number' ? cOverrides[monthIdx] : cOldVal;
@@ -1137,20 +1195,26 @@ const SimulationCanvas: React.FC<SimulationCanvasProps> = ({ projectId, isSample
                     const nodeData = next[nodeId];
                     if (!nodeData || !nodeData.children || nodeData.children.length === 0) return;
                     
-                    const childIds = nodeData.children;
-                    const oldTotal = childIds.reduce((sum, cid) => {
+                    const mutableChildren = nodeData.children.filter(cid => {
+                        const c = next[cid];
+                        return c && !c.isLocked;
+                    });
+
+                    if (mutableChildren.length === 0) return;
+
+                    const oldTotal = mutableChildren.reduce((sum, cid) => {
                         const mVals = calculatedValues[cid]?.slice(0, -1) || [];
                         const cOldFY = next[cid]?.fullYearOverride ?? mVals.reduce((a, b) => a + b, 0);
                         return sum + cOldFY;
                     }, 0);
                     
-                    childIds.forEach(cid => {
+                    mutableChildren.forEach(cid => {
                         const cNode = next[cid];
                         if (!cNode) return;
                         
                         const mVals = calculatedValues[cid]?.slice(0, -1) || [];
                         const cOldVal = cNode.fullYearOverride ?? mVals.reduce((a, b) => a + b, 0);
-                        const cDelta = oldTotal === 0 ? (currentDelta / childIds.length) : currentDelta * (cOldVal / oldTotal);
+                        const cDelta = oldTotal === 0 ? (currentDelta / mutableChildren.length) : currentDelta * (cOldVal / oldTotal);
                         
                         const newFY = cOldVal + cDelta;
                         next[cid] = { ...cNode, fullYearOverride: newFY };
@@ -1315,18 +1379,19 @@ const SimulationCanvas: React.FC<SimulationCanvasProps> = ({ projectId, isSample
             const kpi = prev[id];
             if (willLock) {
                 // Snapshot current calculated values as overrides so they persist after unlock
+                const numMonths = appState.dateRange.endMonth - appState.dateRange.startMonth + 1;
                 const currentCalc = calculatedValues[id];
-                const months = currentCalc ? currentCalc.slice(0, -1) : []; // exclude total
+                const months = currentCalc && currentCalc.length > 1 ? currentCalc.slice(0, -1) : Array(numMonths).fill(0); // exclude total
                 const overrides = months.map((v: number, i: number) => kpi.monthlyOverrides?.[i] ?? v);
                 return {
                     ...prev,
                     [id]: { ...kpi, isLocked: true, monthlyOverrides: overrides }
                 };
             } else {
-                // Unlock — keep the snapshotted overrides so values don't drift
+                // Unlock — keep the snapshotted overrides so values don't drift, but clear cell locks
                 return {
                     ...prev,
-                    [id]: { ...kpi, isLocked: false }
+                    [id]: { ...kpi, isLocked: false, lockedMonths: [] }
                 };
             }
         });
@@ -1995,6 +2060,7 @@ const SimulationCanvas: React.FC<SimulationCanvasProps> = ({ projectId, isSample
                                             activeScenarioId={appState.activeScenarioId}
                                             onScenarioSelect={onScenarioSelect}
                                             onScenarioAdd={onScenarioAdd}
+                                            onScenarioDelete={onScenarioDelete}
                                             valueDisplayType={appState.valueDisplayType}
                                             baselineScenarioId={appState.baselineScenarioId}
                                             setAppState={setAppState}
@@ -2026,6 +2092,7 @@ const SimulationCanvas: React.FC<SimulationCanvasProps> = ({ projectId, isSample
                                     onBaselineScenarioSelect={(id: string) => setAppState((prev: any) => ({ ...prev, baselineScenarioId: id }))}
                                     baseValues={baseValues}
                                     onScenarioAdd={onScenarioAdd}
+                                    onScenarioDelete={onScenarioDelete}
                                     onMakeBaseScenario={handleMakeBaseScenario}
                                     onToggleExpand={handleToggleExpand}
                                     onCustomDataImport={handleCustomDataImport}

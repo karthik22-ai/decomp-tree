@@ -1,8 +1,7 @@
 import type { KPIData, DateRange } from '../types';
 
-const API_BASE_URL = import.meta.env.DEV 
-  ? 'http://localhost:8000' 
-  : 'https://strategic-forecast-backend-460832695260.us-central1.run.app';
+const API_BASE_URL = 'http://localhost:8000';
+console.log("USING API BASE URL:", API_BASE_URL);
 
 export interface CalculationResponse {
   results: Record<string, number[]>;
