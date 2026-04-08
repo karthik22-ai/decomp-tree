@@ -1,8 +1,0 @@
-src/components/RawDataView.tsx(2,33): error TS6133: 'Trash2' is declared but its value is never read.
-src/components/RawDataView.tsx(2,41): error TS6133: 'Share2' is declared but its value is never read.
-src/components/RawDataView.tsx(2,55): error TS6133: 'X' is declared but its value is never read.
-src/components/RawDataView.tsx(3,1): error TS6133: 'apiService' is declared but its value is never read.
-src/components/RawDataView.tsx(4,1): error TS6133: 'KPIData' is declared but its value is never read.
-src/components/SimulationCanvas.tsx(21,83): error TS6196: 'DateRange' is declared but never used.
-src/components/SimulationCanvas.tsx(59,5): error TS6133: 'setIsCalculating' is declared but its value is never read.
-src/components/SimulationCanvas.tsx(474,12): error TS6133: 'isScenarioMode' is declared but its value is never read.

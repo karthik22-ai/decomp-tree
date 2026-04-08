@@ -5,6 +5,7 @@ import re
 from typing import Dict, List, Any, Optional, Tuple
 from datetime import datetime
 from dateutil import parser
+import hashlib
 
 def parse_file_to_kpis(file_content: bytes, filename: str, months_count: int = 12) -> Dict[str, Any]:
     """
@@ -289,8 +290,10 @@ def promote_by_hierarchy(rows: List[List[Any]], months_count: int, mappings: Dic
             
         kpi_key = get_kpi_key(current_levels)
         if kpi_key not in kpi_map:
+            # Generate a stable ID based on the hierarchy path
+            kpi_id = f"kpi-{hashlib.md5(kpi_key.encode()).hexdigest()[:16]}"
             kpi_map[kpi_key] = {
-                "id": f"kpi-{abs(hash(kpi_key))}",
+                "id": kpi_id,
                 "label": current_levels[-1],
                 "levels": current_levels,
                 "scenarios": {} # scenario_name -> [0] * months_count
@@ -348,8 +351,12 @@ def promote_by_hierarchy(rows: List[List[Any]], months_count: int, mappings: Dic
             if sub_key not in node_registry:
                 p_path = levels[:i-1]
                 p_key = " > ".join(p_path) if p_path else None
+                
+                # Use the same stable ID logic
+                node_id = f"kpi-{hashlib.md5(sub_key.encode()).hexdigest()[:16]}"
+                
                 node_registry[sub_key] = {
-                    "id": f"kpi-{abs(hash(sub_key))}",
+                    "id": node_id,
                     "label": sub_path[-1],
                     "unit": "$",
                     "formula": "SUM" if i < len(levels) else "NONE",

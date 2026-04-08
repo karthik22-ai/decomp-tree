@@ -1,18 +1,46 @@
+# Load environment variables FIRST (before any module reads them)
+from dotenv import load_dotenv
+load_dotenv()
+
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Dict, List, Any, Optional
-
+import asyncio
+import anyio
+from contextlib import asynccontextmanager
 from data.database import init_db
 from api import projects
 from logic.calc import KPICalculator
 from logic.forecaster import generate_forecast
 from logic.importer import sanitize_for_json, parse_file_to_kpis, promote_by_hierarchy
 
-# Initialize the database (Table segments)
-init_db()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup:
+    # Initialize the database (Table segments) - this happens after server start signal
+    print("[DB] Starting non-blocking database initialization...")
+    
+    # We run this in a thread so it doesn't block the lifespan setup
+    # If using Fabric, this will prompt for device login in the terminal
+    async def _init():
+        # Small delay to ensure logs aren't buried
+        await asyncio.sleep(2)
+        while True:
+            try:
+                await anyio.to_thread.run_sync(init_db)
+                print("[DB] Initialization successful!")
+                break
+            except Exception as e:
+                print(f"[DB] Initialization failed/timed out. Retrying in 10s... ({e})")
+                await asyncio.sleep(10)
+            
+    # Start the task without waiting for it to finish (so server can start)
+    asyncio.create_task(_init())
+    
+    yield
 
-app = FastAPI(title="Forecasting Backend")
+app = FastAPI(title="Forecasting Backend", lifespan=lifespan)
 
 # Enable CORS for the React frontend
 app.add_middleware(
@@ -50,10 +78,6 @@ async def root():
 @app.post("/calculate")
 async def calculate(request: CalculationRequest):
     try:
-        import json
-        with open("calculate_payload_trace.json", "w") as f:
-            f.write(json.dumps(request.dict(), indent=2))
-            
         calculator = KPICalculator(request.kpis, request.dateRange)
         results, impacted = calculator.calculate()
         return sanitize_for_json({"results": results, "impactedKpis": impacted})

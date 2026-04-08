@@ -1,73 +1,49 @@
-# React + TypeScript + Vite
+# Forecasting with Directed Graphs
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A comprehensive forecasting and visualization platform that integrates FastAPI, React, and Power Apps Component Framework (PCF) with Microsoft Fabric SQL Warehouse.
 
-Currently, two official plugins are available:
+## Project Architecture
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+The project is organized into three main modules:
 
-## React Compiler
+### 1. [Backend](./backend) (Python / FastAPI)
+The core engine for data persistence and KPI distribution logic.
+- **Database**: Dual-mode поддержку for **Microsoft Fabric SQL Warehouse** and local **SQLite**.
+- **Auth**: Secure authentication via **Entra ID** (formery Azure AD) using passwordless tokens.
+- **API**: RESTful endpoints for project management and scenario modeling.
+- [Read Backend Documentation](./backend/README.md)
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+### 2. [Frontend](./frontend) (React / Vite / TypeScript)
+Modern dashboard for visualizing forecasting nodes, managing overrides, and performing scenario analysis.
+- **Visuals**: Dynamic node-link diagrams and hierarchical spreadsheets.
+- **State**: Optimized state management for complex calculation triggers.
+- **Hosting**: Pre-configured for **Netlify**.
+- [Read Frontend Documentation](./frontend/README.md)
 
-## Expanding the ESLint configuration
+### 3. [PCF](./pcf) (Power Apps Component Framework)
+Integration layer for surfacing the forecasting tools directly inside Microsoft Power Platform environments.
+- **Integration**: Power Apps and Dynamics 365.
+- [Read PCF Documentation](./pcf/README.md)
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+## Quick Start
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+### Running the Entire Stack Locally
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+1.  **Start the Backend**:
+    ```powershell
+    cd backend
+    uvicorn main:app --port 8000
+    ```
+2.  **Start the Frontend**:
+    ```powershell
+    cd frontend
+    npm install
+    npm run dev
+    ```
+3.  **Access the App**: Open [http://localhost:5173](http://localhost:5173) in your browser.
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+## Deployment
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
-
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+- **Backend**: Can be deployed to Cloud Run or Azure App Service.
+- **Frontend**: Deploy to Netlify (base directory: `frontend`).
+- **Database**: Designed for Microsoft Fabric SQL Warehouse.

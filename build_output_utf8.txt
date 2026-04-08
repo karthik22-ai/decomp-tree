@@ -1,5 +1,0 @@
-﻿
-> forecasting@0.0.0 build
-> tsc -b && vite build
-
-src/components/SimulationCanvas.tsx(52,5): error TS6133: 'activeScenarioId' is declared but its value is never read.

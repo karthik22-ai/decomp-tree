@@ -30,7 +30,10 @@ class KPIData(BaseModel):
     desiredTrend: Optional[str] = None
     semantic: Optional[SemanticAttributes] = None
     monthlyOverrides: Optional[List[Any]] = None
-    fullYearOverride: Optional[float] = None
+    overallOverride: Optional[float] = None
+    overrideMonthCount: Optional[int] = None
+    isLocked: Optional[bool] = None
+    lockedMonths: Optional[Any] = None
     pageId: Optional[str] = None
 
 class Scenario(BaseModel):

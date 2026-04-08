@@ -6,3 +6,6 @@ openpyxl
 python-multipart
 pydantic
 sqlalchemy
+pyodbc
+azure-identity
+python-dotenv
