@@ -303,8 +303,13 @@ export class KPICalculator {
             this.results[id][m] = childVals.reduce((a, b) => a * b, 1);
           }
         } else if (kpi.data && Array.isArray(kpi.data)) {
-          // Fallback to historical data if no overrides/children
-          this.results[id][m] = kpi.data[m]?.actual || 0;
+          // Robust mapping of monthly data by Month and Year tokens
+          const historyEntry = kpi.data.find((d: any) => {
+            const dMonth = typeof d.month === 'string' ? parseInt(d.month, 10) : d.month;
+            const dYear = typeof d.year === 'string' ? parseInt(d.year, 10) : d.year;
+            return dMonth === currentMonth && (dYear === undefined || dYear === currentYear);
+          });
+          this.results[id][m] = historyEntry?.actual || 0;
         }
 
         if (kpi.formula === 'CUSTOM' && kpi.customFormula) {

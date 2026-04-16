@@ -24,7 +24,7 @@ interface SpreadsheetViewProps {
     onScenarioSelect?: (id: string) => void;
     onBaselineScenarioSelect?: (id: string) => void;
     onToggleExpand?: (id: string) => void;
-    onExpandAll?: () => void;
+    onExpandAll?: (level?: number) => void;
     onCollapseAll?: () => void;
     onCustomDataImport?: (kpis: Record<string, KPIData>) => void;
     onRowLockToggle?: (id: string) => void;

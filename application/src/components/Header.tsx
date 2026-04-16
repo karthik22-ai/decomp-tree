@@ -25,7 +25,7 @@ interface HeaderProps {
     onEnterPresentation?: () => void;
     dateRangeMode?: 'MTD' | 'YTD';
     onDateRangeModeChange?: (mode: 'MTD' | 'YTD') => void;
-    onExpandAll?: () => void;
+    onExpandAll?: (level?: number) => void;
     onCollapseAll?: () => void;
 }
 
@@ -220,30 +220,39 @@ const Header: React.FC<HeaderProps> = ({ currentView = '/', onViewChange,
 
                 </div>
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    {onExpandAll && (
-                        <button 
-                            className="header-btn secondary" 
-                            onClick={onExpandAll}
-                            title="Expand All Nodes/Rows"
-                            style={{ padding: '2px 8px', fontSize: '11px', height: '24px' }}
-                        >
-                            <TrendingUp size={12} />
-                            <span>EXPAND ALL</span>
-                        </button>
-                    )}
-                    {onCollapseAll && (
-                        <button 
-                            className="header-btn secondary" 
-                            onClick={onCollapseAll}
-                            title="Collapse All Nodes/Rows"
-                            style={{ padding: '2px 8px', fontSize: '11px', height: '24px' }}
-                        >
-                            <TrendingUp size={12} />
-                            <span>COLLAPSE ALL</span>
-                        </button>
-                    )}
-                </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        {onExpandAll && (
+                            <select 
+                                className="header-select"
+                                onChange={(e) => {
+                                    const val = e.target.value;
+                                    if (val === 'all') onExpandAll();
+                                    else if (val) onExpandAll(parseInt(val));
+                                }}
+                                value=""
+                                title="Expand to Level"
+                                style={{ padding: '2px 8px', fontSize: '11px', height: '24px', minHeight: '24px', maxWidth: '100px', cursor: 'pointer' }}
+                            >
+                                <option value="" disabled>EXPAND TO...</option>
+                                <option value="1">Level 1</option>
+                                <option value="2">Level 2</option>
+                                <option value="3">Level 3</option>
+                                <option value="4">Level 4</option>
+                                <option value="all">All Levels</option>
+                            </select>
+                        )}
+                        {onCollapseAll && (
+                            <button 
+                                className="header-btn secondary" 
+                                onClick={onCollapseAll}
+                                title="Collapse All Nodes/Rows"
+                                style={{ padding: '2px 8px', fontSize: '11px', height: '24px' }}
+                            >
+                                <TrendingUp size={12} />
+                                <span>COLLAPSE ALL</span>
+                            </button>
+                        )}
+                    </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                     <div className="value-type-selector">

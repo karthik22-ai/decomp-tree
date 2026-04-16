@@ -31,6 +31,17 @@ import ComparisonView from './ComparisonView';
 import { getMonthsInRange } from '../utils/dateRange';
 import { KPICalculator } from '../logic/KPICalculator';
 
+// Import custom hooks
+import { useKPILayout } from '../hooks/useKPILayout';
+import { useKPICalculation } from '../hooks/useKPICalculation';
+import { useScenarios } from '../hooks/useScenarios';
+import { useAutoSave } from '../hooks/useAutoSave';
+
+// Import sub-components
+import { CanvasPanel } from './CanvasPanel';
+import KPISettingsModal from './KPISettingsModal';
+import ForecastModal from './ForecastModal';
+
 const NODE_TYPES = { kpiNode: KPINode };
 const EDGE_TYPES = {};
 
@@ -106,6 +117,7 @@ interface SimulationCanvasInnerProps {
     onCommentChange: (id: string, comment: string) => void;
     logActivity: (entry: Omit<LogEntry, 'id' | 'timestamp'>) => void;
     onMakeBaseScenario: (id?: string) => void;
+    onSaveAllEdits?: () => void;
     displayMode?: 'annual' | 'monthly';
     selectedMonth?: string;
 }
@@ -149,7 +161,8 @@ const SimulationCanvasInner: React.FC<SimulationCanvasInnerProps> = ({
     scenarioFilterSearch = '',
     setScenarioFilterSearch,
     onCommentChange,
-    onMakeBaseScenario
+    onMakeBaseScenario,
+    onSaveAllEdits
 }: SimulationCanvasInnerProps) => {
     const [nodes, setNodes, onNodesChange] = useNodesState([]);
     const [edges, setEdges, onEdgesChange] = useEdgesState([]);
@@ -158,39 +171,7 @@ const SimulationCanvasInner: React.FC<SimulationCanvasInnerProps> = ({
     const nodeTypes = useMemo(() => NODE_TYPES, []);
     const edgeTypes = useMemo(() => EDGE_TYPES, []);
 
-    const [newScenarioName, setNewScenarioName] = useState('');
-    const [showAddScenario, setShowAddScenario] = useState(false);
-
-    const [renamingId, setRenamingId] = useState<string | null>(null);
-    const [renamingName, setRenamingName] = useState('');
-
-    const { } = useReactFlow();
-
-
-    const handleAddScenario = () => {
-        if (newScenarioName.trim()) {
-            onScenarioAdd(newScenarioName.trim());
-            setNewScenarioName('');
-            setShowAddScenario(false);
-        }
-    };
-
-    const handleRenameConfirm = (id: string) => {
-        if (renamingName.trim() && scenarios[id]?.name !== renamingName.trim()) {
-            setAppState((prev: any) => ({
-                ...prev,
-                scenarios: {
-                    ...prev.scenarios,
-                    [id]: { ...prev.scenarios[id], name: renamingName.trim() }
-                }
-            }));
-        }
-        setRenamingId(null);
-    };
-
-    // fitView prop on ReactFlow handles the initial load. 
-    // Manual fitView in useEffect can be annoying if it triggers on every KPI update.
-    // So we remove it to allow users to zoom/pan freely.
+    const reactFlowInstance = useReactFlow();
 
 
     const onConnect = useCallback((params: Connection) => {
@@ -254,121 +235,67 @@ const SimulationCanvasInner: React.FC<SimulationCanvasInnerProps> = ({
         });
     }, [setKpis]);
 
-    // Generate a structural fingerprint to prevent layout recalculation on value changes
-    const layoutFingerprint = useMemo(() => {
-        if (!kpis) return '';
-        try {
-            return Object.values(kpis).map((k: any) => 
-                k ? `${k.id}-${k.parentId}-${k.children?.length}-${k.isExpanded}-${k.label}` : ''
-            ).join('|');
-        } catch (e) {
-            return '';
-        }
-    }, [kpis]);
+    // Use the custom layout hook
+    const { positions, edges: layoutEdges } = useKPILayout({ kpis });
 
-    // Compute layout positions only when structure changes
-    const layoutPositions = useMemo(() => {
-        const dagreGraph = new dagre.graphlib.Graph();
-        dagreGraph.setDefaultEdgeLabel(() => ({}));
-        const nodeWidth = 280;
-        const nodeHeight = 300;
-        dagreGraph.setGraph({ rankdir: 'LR', nodesep: 60, ranksep: 120 });
-
-        const roots = Object.values(kpis || {}).filter((k: any) => k && (!k.parentId || !(kpis as any)[k.parentId]));
-        const visited = new Set<string>();
-        const edges: Edge[] = [];
-        const nodesInLayout: string[] = [];
-
-        const traverse = (kpi: any) => {
-            if (!kpi || !kpi.id || visited.has(kpi.id)) return;
-            visited.add(kpi.id);
-            nodesInLayout.push(kpi.id);
-            dagreGraph.setNode(kpi.id, { width: nodeWidth, height: nodeHeight });
-
-            if (kpi.isExpanded && kpi.children) {
-                kpi.children.forEach((childId: string) => {
-                    if (!childId) return;
-                    const child = (kpis as any)?.[childId];
-                    if (child) {
-                        edges.push({
-                            id: `e-${kpi.id}-${childId}`,
-                            source: kpi.id,
-                            target: childId,
-                            type: 'default',
-                            animated: false,
-                            style: { strokeWidth: 2, stroke: kpi.color || '#cbd5e1' }
-                        });
-                        dagreGraph.setEdge(kpi.id, childId);
-                        traverse(child);
-                    }
-                });
-            }
-        };
-
-        roots.forEach(r => traverse(r));
-        dagre.layout(dagreGraph);
-
-        const positions: Record<string, { x: number, y: number }> = {};
-        nodesInLayout.forEach(id => {
-            const pos = dagreGraph.node(id);
-            if (pos) {
-                positions[id] = {
-                    x: pos.x - nodeWidth / 2,
-                    y: pos.y - nodeHeight / 2
-                };
-            }
-        });
-
-        return { positions, edges };
-    }, [layoutFingerprint]);
-
-    // Initial node/edge creation when layout changes
+    // Sync nodes and edges with the calculated layout positions
     useEffect(() => {
-        const { positions, edges: newEdges } = layoutPositions;
+        if (!positions || Object.keys(positions).length === 0) return;
 
-        setNodes(currNodes => {
-            if (!positions || !kpis) return currNodes;
-            try {
-                return Object.keys(positions).map(id => {
-                    const kpi = (kpis as any)?.[id];
-                    const pos = positions[id];
-                    if (!kpi || !pos) return null;
-                return {
-                    id,
-                    type: 'kpiNode',
-                    position: pos,
-                    data: {
-                        ...kpi,
-                        _kpiRef: kpi,
-                        onToggleExpand,
-                        onSimulationChange,
-                        onSimulationTypeToggle,
-                        onAddChild,
-                        onSettings,
-                        onResetKPI,
-                        onOverallOverrideChange,
-                        onSplitToPage,
-                        baselineData: (baseValues as any)?.[id] ?? [],
-                        calculatedValue: (calculatedValues as any)?.[id] ?? [],
-                        monthLabels,
-                        isScenarioMode,
-                        desiredTrend: kpi?.desiredTrend,
-                        valueDisplayType: valueDisplayType || 'absolute',
-                        onDisconnect,
-                        showCharts,
-                        onCommentChange,
-                        appState
-                    }
-                };
-                }).filter(Boolean) as Node[];
-            } catch (err) {
-                console.error("Critical error in setNodes layout sync:", err);
-                return currNodes;
-            }
-        });
-        setEdges(newEdges);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [layoutPositions, setNodes, setEdges, onCommentChange]);
+        const updatedNodes: Node[] = Object.keys(positions).map(id => {
+            const kpi = (kpis as any)?.[id];
+            const pos = (positions as any)?.[id];
+            if (!kpi || !pos) return null;
+            
+            return {
+                id,
+                type: 'kpiNode',
+                position: pos,
+                data: {
+                    ...kpi,
+                    _kpiRef: kpi, // Speed reference for sync hook
+                    calculatedValue: (calculatedValues as any)?.[id],
+                    baselineData: (baseValues as any)?.[id],
+                    showCharts,
+                    valueDisplayType: valueDisplayType || 'absolute',
+                    monthLabels,
+                    onToggleExpand,
+                    onSimulationChange,
+                    onSimulationTypeToggle,
+                    onAddChild,
+                    onSettings,
+                    onResetKPI,
+                    onOverallOverrideChange,
+                    onSplitToPage,
+                    onDisconnect,
+                    onCommentChange,
+                    isScenarioMode,
+                    activePageId,
+                    calculatedScenarioValues,
+                    selectedScenarioIds,
+                    scenarios,
+                    appState
+                }
+            };
+        }).filter(n => n !== null) as Node[];
+
+        setNodes(updatedNodes);
+        setEdges(layoutEdges);
+    }, [positions, layoutEdges, kpis, calculatedValues, baseValues, showCharts, valueDisplayType, monthLabels, 
+        isScenarioMode, activePageId, onToggleExpand, onSimulationChange, onSimulationTypeToggle, 
+        onAddChild, onSettings, onResetKPI, onOverallOverrideChange, onSplitToPage, onDisconnect, 
+        onCommentChange, calculatedScenarioValues, selectedScenarioIds, scenarios, appState, setNodes, setEdges]);
+
+
+    // Automatically fit view whenever the layout positions change
+    useEffect(() => {
+        if (positions && Object.keys(positions).length > 0) {
+            const timer = setTimeout(() => {
+                reactFlowInstance.fitView({ padding: 0.15, duration: 400 });
+            }, 100);
+            return () => clearTimeout(timer);
+        }
+    }, [positions, reactFlowInstance]);
 
     // Sync ReactFlow nodes with calculated values whenever results change
     useEffect(() => {
@@ -442,19 +369,7 @@ const SimulationCanvasInner: React.FC<SimulationCanvasInnerProps> = ({
         onCommentChange, calculatedScenarioValues, selectedScenarioIds, scenarios]);
 
     return (
-        <div className={`canvas-wrapper ${isPresentationMode ? 'fixed inset-0 z-[100] bg-slate-50' : ''}`} style={{ width: '100%', height: '100%', flex: 1 }}>
-            {isPresentationMode && (
-                <div className="absolute top-4 left-4 z-10 flex items-center gap-2 bg-white/80 backdrop-blur-sm px-4 py-2 rounded-full shadow-sm border border-slate-200">
-                    <span className="font-semibold text-slate-700">Presentation Mode</span>
-                    <span className="text-xs text-slate-500 bg-slate-200 px-2 py-0.5 rounded-full">Press ESC</span>
-                    <button
-                        onClick={() => setIsPresentationMode(false)}
-                        className="ml-2 bg-slate-700 hover:bg-slate-800 text-white text-xs px-3 py-1.5 rounded-full transition-colors font-medium shadow-sm flex items-center gap-1"
-                    >
-                        <X size={14} /> Exit
-                    </button>
-                </div>
-            )}
+        <div style={{ width: '100%', height: '100%', position: 'relative' }} className="simulation-canvas-wrapper">
             <ReactFlow
                 nodes={nodes}
                 edges={edges}
@@ -466,8 +381,11 @@ const SimulationCanvasInner: React.FC<SimulationCanvasInnerProps> = ({
                 nodeTypes={nodeTypes}
                 edgeTypes={edgeTypes}
                 fitView
+                minZoom={0.005}
+                maxZoom={2}
+                defaultViewport={{ x: 0, y: 0, zoom: 0.8 }}
             >
-                <Background />
+                <Background color="#f8fafc" gap={20} />
                 <Controls />
                 <MiniMap
                     nodeStrokeColor={(n) => {
@@ -478,7 +396,7 @@ const SimulationCanvasInner: React.FC<SimulationCanvasInnerProps> = ({
                     pannable
                     nodeColor={(n) => {
                         if (n.type === 'kpiNode') {
-                            const formula = n.data?.formula || 'NONE';
+                            const formula = (n as any).data?.formula || 'NONE';
                             switch (formula) {
                                 case 'SUM':
                                 case 'PRODUCT':
@@ -488,182 +406,30 @@ const SimulationCanvasInner: React.FC<SimulationCanvasInnerProps> = ({
                                     return '#EC4899';
                                 case 'NONE':
                                 default:
-                                    return n.data?.color || '#3b82f6';
+                                    return (n as any).data?.color || '#3b82f6';
                             }
                         }
                         return '#94a3b8';
                     }}
                     style={{ border: '2px solid #cbd5e1', borderRadius: '4px', backgroundColor: 'white' }}
                 />
-                {!isPresentationMode && (
-                    <>
-                        <Panel position="top-right" className="canvas-panel">
-                            <div className="scenario-controls-mini">
-                                <Layers size={14} />
-                                <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-                                    <div
-                                        onClick={() => setIsScenarioOpen(!isScenarioOpen)}
-                                        style={{
-                                            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                                            border: '1px solid #e2e8f0', borderRadius: '4px', padding: '2px 8px',
-                                            backgroundColor: 'white', minWidth: '140px', cursor: 'pointer',
-                                            fontSize: '12px', color: '#334155', fontWeight: 500, height: '24px'
-                                        }}
-                                    >
-                                        <span style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', maxWidth: '100px' }}>
-                                            {selectedScenarioIds.length} Selected
-                                        </span>
-                                        <Sliders size={12} style={{ marginLeft: 4, color: '#64748b' }} />
-                                    </div>
-
-                                    {isScenarioOpen && (
-                                        <>
-                                            <div onClick={() => setIsScenarioOpen(false)} style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 998 }} />
-                                            <div style={{ position: 'absolute', top: '100%', left: 0, marginTop: '4px', width: 200, background: 'white', border: '1px solid #e2e8f0', borderRadius: 6, boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)', zIndex: 999, padding: 8 }}>
-                                                <div style={{ position: 'relative', marginBottom: 8 }}>
-                                                    <Search size={12} style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
-                                                    <input
-                                                        autoFocus
-                                                        placeholder="Search scenarios..."
-                                                        value={scenarioFilterSearch}
-                                                        onChange={(e) => setScenarioFilterSearch(e.target.value)}
-                                                        style={{ width: '100%', padding: '4px 8px 4px 24px', borderRadius: 4, border: '1px solid #e2e8f0', fontSize: 11, outline: 'none' }}
-                                                    />
-                                                </div>
-                                                <div style={{ maxHeight: 150, overflowY: 'auto' }}>
-                                                    {Object.values(scenarios)
-                                                        .filter((s: any) => s.name.toLowerCase().includes(scenarioFilterSearch.toLowerCase()))
-                                                        .map((s: any) => {
-                                                            const isSelected = selectedScenarioIds.includes(s.id);
-                                                            return (
-                                                                <div
-                                                                    key={s.id}
-                                                                    onClick={() => {
-                                                                        if (isSelected) {
-                                                                            const next = selectedScenarioIds.filter((id: string) => id !== s.id);
-                                                                            if (next.length > 0) {
-                                                                                setAppState((prev: any) => ({ ...prev, spreadsheetSelectedScenarios: next }));
-                                                                                onScenarioSelect(next[next.length - 1]);
-                                                                            }
-                                                                        } else {
-                                                                            const next = [...selectedScenarioIds, s.id];
-                                                                            setAppState((prev: any) => ({ ...prev, spreadsheetSelectedScenarios: next }));
-                                                                            onScenarioSelect(s.id);
-                                                                        }
-                                                                    }}
-                                                                    style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px', cursor: 'pointer', fontSize: 12, borderRadius: 3, backgroundColor: isSelected ? '#f8fafc' : 'transparent' }}
-                                                                >
-                                                                    <div style={{ width: 12, height: 12, borderRadius: '50%', border: isSelected ? '3.5px solid #3b82f6' : '1px solid #cbd5e1', background: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                                                                    </div>
-                                                                    {renamingId === s.id ? (
-                                                                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, flex: 1 }} onClick={e => e.stopPropagation()}>
-                                                                            <input
-                                                                                autoFocus
-                                                                                value={renamingName}
-                                                                                onChange={(e) => setRenamingName(e.target.value)}
-                                                                                onBlur={() => handleRenameConfirm(s.id)}
-                                                                                onKeyDown={(e) => e.key === 'Enter' && handleRenameConfirm(s.id)}
-                                                                                style={{ flex: 1, padding: '2px 4px', border: '1px solid #3b82f6', borderRadius: 2, fontSize: 11 }}
-                                                                            />
-                                                                        </div>
-                                                                    ) : (
-                                                                        <>
-                                                                            <span style={{ color: isSelected ? '#3b82f6' : '#334155', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{s.name}</span>
-                                                                            <Edit2
-                                                                                size={12}
-                                                                                style={{ cursor: 'pointer', opacity: 0.5, color: '#64748b' }}
-                                                                                onClick={(e) => {
-                                                                                    e.stopPropagation();
-                                                                                    setRenamingId(s.id);
-                                                                                    setRenamingName(s.name);
-                                                                                }}
-                                                                            />
-                                                                        </>
-                                                                    )}
-                                                                    {s.id !== 'base' && (
-                                                                        <div 
-                                                                            title="Promote to Base"
-                                                                            onClick={(e) => { e.stopPropagation(); onMakeBaseScenario(s.id); }}
-                                                                            style={{ cursor: 'pointer', opacity: 0.5, color: '#3b82f6', display: 'flex', alignItems: 'center' }}
-                                                                            onMouseEnter={e => e.currentTarget.style.opacity = '1'}
-                                                                            onMouseLeave={e => e.currentTarget.style.opacity = '0.5'}
-                                                                        >
-                                                                             <TrendingUp size={12} />
-                                                                        </div>
-                                                                    )}
-                                                                    {s.isPromoted && (
-
-                                                                        <span title="Original Data (Read-Only)" style={{ fontSize: '9px', background: '#fff7ed', color: '#c2410c', padding: '1px 4px', borderRadius: '4px', border: '1px solid #ffedd5', fontWeight: 600, flexShrink: 0, display: 'flex', alignItems: 'center', gap: '2px' }}>
-                                                                            <Lock size={10} /> ORIGINAL
-                                                                        </span>
-                                                                    )}
-                                                                    {s.id !== 'base' && !s.isPromoted && renamingId !== s.id && (
-                                                                        <Trash2
-                                                                            size={14}
-                                                                            color="#ef4444"
-                                                                            style={{ cursor: 'pointer', opacity: 0.6, marginLeft: 'auto' }}
-                                                                            onClick={(e) => {
-                                                                                e.stopPropagation();
-                                                                                if (onScenarioDelete) onScenarioDelete(s.id, e);
-                                                                            }}
-                                                                            onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
-                                                                            onMouseLeave={(e) => e.currentTarget.style.opacity = '0.6'}
-                                                                        />
-                                                                    )}
-                                                                </div>
-                                                            );
-                                                        })}
-                                                </div>
-                                            </div>
-                                        </>
-                                    )}
-                                </div>
-
-                                <div className="v-divider" style={{ width: 1, height: 16, backgroundColor: '#e2e8f0', margin: '0 4px' }} />
-
-                                <select
-                                    value={baselineScenarioId}
-                                    onChange={(e) => setAppState((prev: any) => ({ ...prev, baselineScenarioId: e.target.value }))}
-                                    className="scenario-select-mini"
-                                    style={{ borderColor: '#64748b' }}
-                                    title="Comparison Scenario"
-                                >
-                                    {Object.values(scenarios as Record<string, Scenario>).map((s: Scenario) => (
-                                        <option key={s.id} value={s.id}>Comparison: {s.name}</option>
-                                    ))}
-                                </select>
-
-                                <div className="v-divider" style={{ width: 1, height: 16, backgroundColor: '#e2e8f0', margin: '0 4px' }} />
-
-                                {!showAddScenario ? (
-                                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                                        <button className="icon-btn-sm" onClick={() => setShowAddScenario(true)} title="Save As New Scenario">
-                                            <Plus size={14} />
-                                        </button>
-                                    </div>
-                                ) : (
-                                    <div className="mini-popover">
-                                        <input
-                                            autoFocus
-                                            className="mini-input"
-                                            value={newScenarioName}
-                                            onChange={(e) => setNewScenarioName(e.target.value)}
-                                            placeholder="New Scenario..."
-                                            onKeyDown={(e) => e.key === 'Enter' && handleAddScenario()}
-                                        />
-                                        <button className="mini-save-btn" onClick={handleAddScenario}>Save</button>
-                                    </div>
-                                )}
-                            </div>
-
-                        </Panel>
-                        <Panel position="top-left" className="canvas-panel">
-                            <button className="add-root-btn" onClick={onAddRoot}>
-                                <Plus size={16} /> Add Root KPI
-                            </button>
-                        </Panel>
-                    </>
-                )}
+                <CanvasPanel
+                    isPresentationMode={isPresentationMode}
+                    setIsPresentationMode={setIsPresentationMode}
+                    isScenarioOpen={isScenarioOpen}
+                    setIsScenarioOpen={setIsScenarioOpen}
+                    selectedScenarioIds={selectedScenarioIds}
+                    scenarios={scenarios}
+                    scenarioFilterSearch={scenarioFilterSearch}
+                    setScenarioFilterSearch={setScenarioFilterSearch}
+                    baselineScenarioId={baselineScenarioId}
+                    onScenarioSelect={onScenarioSelect}
+                    onScenarioAdd={onScenarioAdd}
+                    onScenarioDelete={onScenarioDelete}
+                    onMakeBaseScenario={onMakeBaseScenario}
+                    onAddRoot={onAddRoot}
+                    setAppState={setAppState}
+                />
             </ReactFlow>
         </div>
     );
@@ -788,6 +554,33 @@ const SimulationCanvas: React.FC<SimulationCanvasProps> = ({ projectId, isSample
 
     const activePageId = appState.activePageId || 'page-1';
 
+    // Derived states
+    const kpis = useMemo(() => appState.scenarios[appState.activeScenarioId]?.kpis || {}, [appState.scenarios, appState.activeScenarioId]);
+
+    const monthLabels = useMemo(() => {
+        return getMonthsInRange(
+            appState.dateRange.startMonth,
+            appState.dateRange.startYear,
+            appState.dateRange.endMonth,
+            appState.dateRange.endYear
+        ).map(m => m.label.split(' ')[0]);
+    }, [appState.dateRange]);
+
+    const filteredKpis = useMemo(() => {
+        const result: Record<string, KPIData> = {};
+        Object.keys(kpis).forEach(id => {
+            if (kpis[id].pageId === activePageId || (!kpis[id].pageId && activePageId === 'page-1')) {
+                result[id] = kpis[id];
+            }
+        });
+        return result;
+    }, [kpis, activePageId]);
+
+    const selectedScenarioIds = useMemo(() => 
+        appState.spreadsheetSelectedScenarios || [appState.baselineScenarioId, appState.activeScenarioId],
+        [appState.spreadsheetSelectedScenarios, appState.baselineScenarioId, appState.activeScenarioId]
+    );
+
     const logActivity = useCallback((entry: Omit<LogEntry, 'id' | 'timestamp'>) => {
         setAppState(prev => {
             const newLog: LogEntry = {
@@ -800,157 +593,37 @@ const SimulationCanvas: React.FC<SimulationCanvasProps> = ({ projectId, isSample
                 activityLog: [newLog, ...(prev.activityLog || [])].slice(0, 100)
             };
         });
-    }, []);
+    }, [setAppState]);
 
     const [editingId, setEditingId] = useState<string | null>(null);
     const [isScenarioOpen, setIsScenarioOpen] = useState(false);
     const [scenarioFilterSearch, setScenarioFilterSearch] = useState('');
-    const [settingsShowSlider, setSettingsShowSlider] = useState(false);
-    const [settingsSliderValue, setSettingsSliderValue] = useState(0);
-    const [settingsSliderBase, setSettingsSliderBase] = useState(0);
     const [showForecastModal, setShowForecastModal] = useState(false);
     const [forecastConfig, setForecastConfig] = useState<{ method: ForecastMethod, growthRate: number }>({ method: 'LINEAR_TREND', growthRate: 5 });
 
-    // Suggestion state for Modal
-    const [formulaSuggestions, setFormulaSuggestions] = useState<KPIData[]>([]);
-    const [suggestionIndex, setSuggestionIndex] = useState(0);
+    // Use the auto-save hook
+    useAutoSave({ projectId, appState });
 
-    // Bulk Adjust state
-    const [bulkPercentage, setBulkPercentage] = useState<string>('0');
-    const [bulkStartMonth, setBulkStartMonth] = useState(0);
-    const [bulkStartYear, setBulkStartYear] = useState(2024);
-    const [bulkEndMonth, setBulkEndMonth] = useState(11);
-    const [bulkEndYear, setBulkEndYear] = useState(2024);
+    // Use the KPI calculation hook
+    const { 
+        calculatedValues, 
+        baseValues, 
+        calculatedScenarioValues, 
+        isCalculating, 
+        setIsCalculating,
+        setCalculatedValues,
+        setBaseValues,
+        setCalculatedScenarioValues 
+    } = useKPICalculation({ appState, isLoadingData });
 
-    const [isCalculating, setIsCalculating] = useState(false);
-    const [calculatedValues, setCalculatedValues] = useState<Record<string, number[]>>({});
-    const [baseValues, setBaseValues] = useState<Record<string, number[]>>({});
-    const [calculatedScenarioValues, setCalculatedScenarioValues] = useState<Record<string, Record<string, number[]>>>({});
-
-    // Reference to track calculation versions and prevent race conditions
-    const calculationVersionRef = useRef(0);
-
-    const activeScenarioId = appState.activeScenarioId || 'base';
-    const activeScenario = appState.scenarios[activeScenarioId] || appState.scenarios['base'] || { kpis: {} };
-    const kpis = activeScenario.kpis || {};
-    const selectedScenarioIds = useMemo(() => appState.spreadsheetSelectedScenarios || [activeScenarioId], [appState.spreadsheetSelectedScenarios, activeScenarioId]);
-
-    useEffect(() => {
-        if (isLoadingData) return;
-        
-        const currentVersion = ++calculationVersionRef.current;
-        let isMounted = true;
-
-        const calculate = async () => {
-            setIsCalculating(true);
-            try {
-                const currentBaselineId = appState.baselineScenarioId || 'base';
-                const scenarioIdsToCalculate = Array.from(new Set([
-                    appState.activeScenarioId, 
-                    currentBaselineId, 
-                    ...(appState.spreadsheetSelectedScenarios || [])
-                ]));
-
-                const promises = scenarioIdsToCalculate.map(async (scenId) => {
-                    const sceneKpis = appState.scenarios?.[scenId]?.kpis || {};
-                    const res = await apiService.calculate(sceneKpis, appState.dateRange);
-                    return { id: scenId, results: res?.results || {}, rawResponse: res };
-                });
-
-                const results = await Promise.all(promises);
-
-                // Only apply if this is still the latest calculation and component is mounted
-                if (!isMounted || currentVersion !== calculationVersionRef.current) return;
-
-                const newScenarioValues: Record<string, Record<string, number[]>> = {};
-                let activeRawResponse: any = null;
-
-                const activeResults = results.find(r => r.id === appState.activeScenarioId);
-                if (activeResults) {
-                    setCalculatedValues(activeResults.results || {});
-                    activeRawResponse = activeResults.rawResponse;
-                }
-
-                const baseResults = results.find(r => r.id === (appState.baselineScenarioId || 'base'));
-                if (baseResults) {
-                    setBaseValues(baseResults.results || {});
-                }
-
-                results.forEach(({ id, results }) => {
-                    newScenarioValues[id] = results || {};
-                });
-
-                setCalculatedScenarioValues(newScenarioValues);
-
-                if (activeRawResponse?.impactedKpis?.length > 0) {
-                   // log logic... (omitted for brevity but kept in mind)
-                }
-
-            } catch (err) {
-                console.error('Calculation error:', err);
-            } finally {
-                if (isMounted && currentVersion === calculationVersionRef.current) {
-                    setIsCalculating(false);
-                }
-            }
-        };
-
-        const timer = setTimeout(calculate, 300);
-        return () => {
-            isMounted = false;
-            clearTimeout(timer);
-        };
-    }, [appState.dateRange, appState.activeScenarioId, appState.baselineScenarioId, appState.spreadsheetSelectedScenarios, appState.scenarios]);
-
-
-    // Auto-save appState to backend whenever it changes meaningfully
-    useEffect(() => {
-        if (!projectId || isSampleMode || isLoadingData) return;
-
-        // Skip if change is not meaningful
-        const stateStr = JSON.stringify(appState);
-        if (stateStr === lastSavedStateRef.current) return;
-
-        // Debounce logic: clear any pending timer
-        if (pendingSaveRef.current) clearTimeout(pendingSaveRef.current);
-
-        pendingSaveRef.current = setTimeout(async () => {
-            try {
-                // Final check before sending to avoid race condition with fast typing
-                if (stateStr !== lastSavedStateRef.current) {
-                    await apiService.saveProjectState(projectId, appState);
-                    lastSavedStateRef.current = stateStr;
-                    console.info("Project state auto-saved.");
-                }
-                pendingSaveRef.current = null;
-            } catch (err) {
-                console.error("Auto-save failed:", err);
-            }
-        }, 1000);
-
-        return () => {
-             // We don't clear the timeout here because we WANT it to fire eventually 
-             // unless another change comes in (handled above).
-             // Clearing it here on every render would prevent it from ever firing if renders are frequent.
-        };
-    }, [appState, projectId, isSampleMode, isLoadingData]);
-
-    // Ensure save on unmount/back
-    useEffect(() => {
-        return () => {
-            // Check if there was a pending save
-            if (pendingSaveRef.current) {
-                clearTimeout(pendingSaveRef.current);
-                // Fire one final save attempt immediately on unmount using the ref
-                const stateToSave = appStateRef.current;
-                const stateStr = JSON.stringify(stateToSave);
-                if (stateStr !== lastSavedStateRef.current) {
-                    apiService.saveProjectState(projectId, stateToSave).catch(e => console.error("Final save failed", e));
-                    lastSavedStateRef.current = stateStr;
-                }
-            }
-        };
-    }, [projectId]); // Only run once on mount/unmount logic
+    // Use the scenario management hook
+    const {
+        onScenarioAdd,
+        onScenarioDelete,
+        onScenarioSelect,
+        handleMakeBaseScenario,
+        onRenameScenario
+    } = useScenarios({ appState, setAppState, kpis });
 
 
     const setKpis = useCallback((updater: (prev: Record<string, KPIData>) => Record<string, KPIData>, _forceUpdateBase: boolean = false, targetScenarioId?: string) => {
@@ -999,119 +672,12 @@ const SimulationCanvas: React.FC<SimulationCanvasProps> = ({ projectId, isSample
         });
     }, [setAppState]);
 
-    const monthLabels = useMemo(() => {
-        const monthsInRange = getMonthsInRange(
-            appState.dateRange.startMonth,
-            appState.dateRange.startYear,
-            appState.dateRange.endMonth,
-            appState.dateRange.endYear
-        );
-        return monthsInRange.map(m => m.label.split(' ')[0]); // Get 'Jan', 'Feb', etc.
-    }, [appState.dateRange]);
-
-    // Filter KPIs for current page display, but calculations should use ALL KPIs
-    const filteredKpis = useMemo(() => {
-        const result: Record<string, KPIData> = {};
-        Object.keys(kpis).forEach(id => {
-            if (kpis[id].pageId === activePageId || (!kpis[id].pageId && activePageId === 'page-1')) {
-                result[id] = kpis[id];
-            }
-        });
-        return result;
-    }, [kpis, activePageId]);
-
-
-
     const onSyncToggle = useCallback(() => {
         setAppState(prev => ({ ...prev, isSyncEnabled: !prev.isSyncEnabled }));
     }, []);
 
     const onValueDisplayTypeChange = useCallback((type: 'absolute' | 'variance') => {
         setAppState(prev => ({ ...prev, valueDisplayType: type }));
-    }, []);
-
-    const onScenarioAdd = useCallback((name: string, snapshot?: Record<string, KPIData>) => {
-        const id = `scenario-${Date.now()}`;
-        setAppState(prev => ({
-            ...prev,
-            scenarios: {
-                ...prev.scenarios,
-                [id]: { id, name, kpis: snapshot ? JSON.parse(JSON.stringify(snapshot)) : JSON.parse(JSON.stringify(kpis)), createdAt: new Date().toISOString() }
-            },
-            activeScenarioId: id
-        }));
-    }, [kpis]);
-
-    const onScenarioDelete = useCallback((id: string, e?: React.MouseEvent) => {
-        if (e) e.stopPropagation();
-        if (id === 'base') {
-            alert("Cannot delete the Base Scenario.");
-            return;
-        }
-        if (!confirm("Are you sure you want to delete this scenario?")) return;
-
-        setAppState(prev => {
-            const newScenarios = { ...prev.scenarios };
-            delete newScenarios[id];
-
-            // Update active/baseline scenario if needed
-            const remainingIds = Object.keys(newScenarios);
-            const nextActiveId = prev.activeScenarioId === id
-                ? (remainingIds.includes('base') ? 'base' : remainingIds[0])
-                : prev.activeScenarioId;
-            const nextBaselineId = prev.baselineScenarioId === id
-                ? (remainingIds.includes('base') ? 'base' : remainingIds[0])
-                : prev.baselineScenarioId;
-
-            // Update spreadsheet selected scenarios
-            const nextSpreadsheetSelected = prev.spreadsheetSelectedScenarios
-                ? prev.spreadsheetSelectedScenarios.filter((sid: string) => sid !== id)
-                : undefined;
-
-            return {
-                ...prev,
-                scenarios: newScenarios,
-                activeScenarioId: nextActiveId,
-                baselineScenarioId: nextBaselineId,
-                spreadsheetSelectedScenarios: nextSpreadsheetSelected && nextSpreadsheetSelected.length > 0
-                    ? nextSpreadsheetSelected
-                    : [nextActiveId]
-            };
-        });
-    }, []);
-
-    const handleMakeBaseScenario = useCallback((targetId?: string) => {
-        const scenarioId = targetId || appState.activeScenarioId;
-        if (scenarioId === 'base') return;
-
-        const sourceScenario = appState.scenarios[scenarioId];
-        if (!sourceScenario) return;
-
-        const updatedBaseKpis = JSON.parse(JSON.stringify(sourceScenario.kpis));
-
-        setAppState(prev => {
-            return {
-                ...prev,
-                scenarios: {
-                    ...prev.scenarios,
-                    ['base']: {
-                        ...prev.scenarios['base'],
-                        kpis: updatedBaseKpis,
-                        updatedAt: new Date().toISOString(),
-                        lastPromotedFrom: scenarioId
-                    }
-                },
-                activeScenarioId: 'base',
-                baselineScenarioId: 'base'
-            };
-        });
-        
-        alert(`Successfully promoted data from "${sourceScenario.name}" to the Base scenario.`);
-    }, [appState.activeScenarioId, appState.scenarios, setAppState]);
-
-
-    const onScenarioSelect = useCallback((id: string) => {
-        setAppState(prev => ({ ...prev, activeScenarioId: id }));
     }, []);
 
     const onSplitToPage = useCallback((nodeId: string) => {
@@ -1239,7 +805,6 @@ const SimulationCanvas: React.FC<SimulationCanvasProps> = ({ projectId, isSample
             value
         });
 
-        calculationVersionRef.current++; // Invalidate pending async calcs
         setCalculatedValues(nextResults);
         setKpis(() => nextKpis);
     }, [kpis, appState.dateRange, setKpis]);
@@ -1254,8 +819,6 @@ const SimulationCanvas: React.FC<SimulationCanvasProps> = ({ projectId, isSample
             value
         });
 
-        calculationVersionRef.current++; // Invalidate pending async calcs
-        
         if (targetSid === appState.activeScenarioId) {
             setCalculatedValues(nextResults);
         }
@@ -1549,21 +1112,6 @@ const SimulationCanvas: React.FC<SimulationCanvasProps> = ({ projectId, isSample
         }));
     }, []);
 
-    const onRenameScenario = useCallback((id: string, name: string) => {
-        setAppState(prev => {
-            const next = { ...prev };
-            if (next.scenarios[id]) {
-                next.scenarios[id] = { ...next.scenarios[id], name };
-            }
-            return next;
-        });
-
-        logActivity({
-            action: 'Scenario Renamed',
-            details: `Renamed scenario to "${name}"`
-        });
-    }, [logActivity]);
-
     const onCellCommentChange = useCallback((kpiId: string, monthIdx: number, comment: string) => {
         setKpis(prev => {
             const next = { ...prev };
@@ -1695,97 +1243,8 @@ const SimulationCanvas: React.FC<SimulationCanvasProps> = ({ projectId, isSample
 
     const onSettings = useCallback((id: string) => {
         setEditingId(id);
-        setSettingsShowSlider(false);
-        setSettingsSliderValue(0);
-        const currentKpi = kpis[id];
-        if (currentKpi) {
-            // Capture base value for slider at the moment settings is opened
-            const baseTotal = (currentKpi.overallOverride && currentKpi.overallOverride['2024']) || (calculatedValues[id]?.slice(0, -1).reduce((a: number, b: number) => a + b, 0) || 0);
-            setSettingsSliderBase(baseTotal);
-            setBulkStartMonth(appState.dateRange.startMonth);
-            setBulkStartYear(appState.dateRange.startYear);
-            setBulkEndMonth(appState.dateRange.endMonth);
-            setBulkEndYear(appState.dateRange.endYear);
-            setBulkPercentage('0');
-        }
-    }, [kpis, appState.dateRange, calculatedValues]);
+    }, []);
 
-    const handleBulkAdjust = useCallback(() => {
-        if (!editingId) return;
-        const percentage = parseFloat(bulkPercentage);
-        if (isNaN(percentage)) return;
-
-        const factor = 1 + (percentage / 100);
-        const monthsInRange = getMonthsInRange(bulkStartMonth, bulkStartYear, bulkEndMonth, bulkEndYear);
-        const monthLabels = monthsInRange.map(m => m.label);
-
-        setKpis(prev => {
-            const next = { ...prev };
-            const current = next[editingId];
-            if (!current) return prev;
-            
-            const newData = current.data.map(d => {
-                if (monthLabels.includes(d.month)) {
-                    return { ...d, actual: d.actual * factor };
-                }
-                return d;
-            });
-
-            // Also update monthlyOverrides if they exist
-            let newOverrides = { ...(current.monthlyOverrides || {}) };
-            
-            const appMonthsInRange = getMonthsInRange(appState.dateRange.startMonth, appState.dateRange.startYear, appState.dateRange.endMonth, appState.dateRange.endYear);
-            
-            for (let i = 0; i < appMonthsInRange.length; i++) {
-                const mObj = appMonthsInRange[i];
-                if (mObj && monthLabels.includes(mObj.label)) {
-                    const monthKey = `${mObj.year}-${mObj.month}`;
-                    const isMutable = !current.isLocked && !current.lockedMonths?.[monthKey];
-                    if (isMutable) {
-                        const calcOld = calculatedValues[editingId]?.[i] ?? 0;
-                        const currentVal = newOverrides[monthKey] !== undefined ? (newOverrides[monthKey] as number) : calcOld;
-                        newOverrides[monthKey] = currentVal * factor;
-                    }
-                }
-            }
-
-            next[editingId] = {
-                ...current,
-                data: newData,
-                monthlyOverrides: newOverrides,
-                simulationValue: 0,
-                overallOverride: undefined
-            };
-
-            // Clear overrides for all ancestors to keep them dynamic
-            let pId = current.parentId;
-            while (pId && next[pId]) {
-                const parentData = next[pId];
-                let parentOverrides = { ...(parentData.monthlyOverrides || {}) };
-                
-                appMonthsInRange.forEach(mObj => {
-                    const monthKey = `${mObj.year}-${mObj.month}`;
-                    if (monthLabels.includes(mObj.label)) {
-                        delete parentOverrides[monthKey];
-                    }
-                });
-                
-                next[pId] = {
-                    ...parentData,
-                    monthlyOverrides: parentOverrides,
-                    overallOverride: undefined
-                };
-                pId = parentData.parentId;
-            }
-            return next;
-        });
-
-        logActivity({
-            action: 'EDIT',
-            details: `Bulk adjusted ${kpis[editingId]?.label} by ${percentage}% from ${monthLabels[0]} to ${monthLabels[monthLabels.length - 1]}`,
-            kpiId: editingId
-        });
-    }, [editingId, bulkPercentage, bulkStartMonth, bulkStartYear, bulkEndMonth, bulkEndYear, kpis, setKpis, logActivity, appState.dateRange, calculatedValues]);
 
     const onReset = useCallback(() => {
         logActivity({
@@ -2250,12 +1709,35 @@ const SimulationCanvas: React.FC<SimulationCanvasProps> = ({ projectId, isSample
                         return next;
                     });
                 }}
-                onExpandAll={() => {
+                onExpandAll={(level) => {
                     setAppState(prev => {
                         const nextScenarios = { ...prev.scenarios };
                         Object.keys(nextScenarios).forEach(scenId => {
-                            const newKpis = { ...nextScenarios[scenId].kpis };
-                            Object.keys(newKpis).forEach(id => { newKpis[id] = { ...newKpis[id], isExpanded: true }; });
+                            const kpis = nextScenarios[scenId].kpis;
+                            const newKpis = { ...kpis };
+                            
+                            if (level === undefined) {
+                                Object.keys(newKpis).forEach(id => {
+                                    newKpis[id] = { ...newKpis[id], isExpanded: true };
+                                });
+                            } else {
+                                const depths: Record<string, number> = {};
+                                const getDepth = (id: string): number => {
+                                    if (depths[id]) return depths[id];
+                                    const kpi = kpis[id];
+                                    if (!kpi || !kpi.parentId) {
+                                        depths[id] = 1;
+                                    } else {
+                                        depths[id] = getDepth(kpi.parentId) + 1;
+                                    }
+                                    return depths[id];
+                                };
+
+                                Object.keys(newKpis).forEach(id => {
+                                    const depth = getDepth(id);
+                                    newKpis[id] = { ...newKpis[id], isExpanded: depth <= level };
+                                });
+                            }
                             nextScenarios[scenId] = { ...nextScenarios[scenId], kpis: newKpis };
                         });
                         return { ...prev, scenarios: nextScenarios };
@@ -2445,339 +1927,27 @@ const SimulationCanvas: React.FC<SimulationCanvasProps> = ({ projectId, isSample
                 </div>
             </MainLayout>
 
-            {editingId && kpis[editingId] && (
-                <div className="modal-overlay">
-                    <div className="modal-content" style={{ width: '850px', maxWidth: '95vw' }}>
-                        <div className="modal-header">
-                            <h2>KPI Settings</h2>
-                            <button className="close-btn" onClick={() => setEditingId(null)}><X size={20} /></button>
-                        </div>
-                        <div className="modal-body">
-                            <div className="form-group">
-                                <label>Label</label>
-                                <input
-                                    value={kpis[editingId].label}
-                                    onChange={e => setKpis(prev => ({ ...prev, [editingId]: { ...prev[editingId], label: e.target.value } }))}
-                                />
-                            </div>
-                            <div className="form-row">
-                                <div className="form-group">
-                                    <label>Overall Total</label>
-                                    <div style={{ display: 'flex', gap: '8px' }}>
-                                        <input
-                                            type="number"
-                                            value={
-                                                (kpis[editingId]?.overallOverride?.[appState.dateRange.endYear.toString()] as number) ??
-                                                (calculatedValues[editingId]?.[monthLabels.length] || 0)
-                                            }
-                                            onChange={e => {
-                                                const val = e.target.value === '' ? undefined : parseFloat(e.target.value);
-                                                onOverallOverrideChange(editingId, appState.dateRange.endYear.toString(), val);
-                                                setSettingsSliderValue(0);
-                                            }}
-                                            disabled={kpis[editingId].formula !== 'NONE'}
-                                            title={kpis[editingId].formula !== 'NONE' ? "Computed nodes cannot have overriding totals directly set." : ""}
-                                            style={{ flex: 1, backgroundColor: kpis[editingId].formula !== 'NONE' ? '#f1f5f9' : 'white', cursor: kpis[editingId].formula !== 'NONE' ? 'not-allowed' : 'text' }}
-                                        />
-                                        <button
-                                            onClick={() => setSettingsShowSlider(!settingsShowSlider)}
-                                            style={{ padding: '0 12px', background: 'white', border: '1px solid #cbd5e1', borderRadius: '8px', cursor: 'pointer', color: '#3b82f6', fontWeight: 600 }}
-                                            title="Adjust by Percentage"
-                                            disabled={kpis[editingId].formula !== 'NONE'}
-                                        >
-                                            %
-                                        </button>
-                                    </div>
-                                    {settingsShowSlider && kpis[editingId].formula === 'NONE' && (
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '12px' }}>
-                                            <span style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: 600, minWidth: '36px' }}>
-                                                {settingsSliderValue > 0 ? '+' : ''}{settingsSliderValue}%
-                                            </span>
-                                            <input
-                                                type="range"
-                                                min="-100"
-                                                max="100"
-                                                value={settingsSliderValue}
-                                                onChange={e => {
-                                                    const pct = parseInt(e.target.value, 10);
-                                                    setSettingsSliderValue(pct);
-                                                    const computed = settingsSliderBase * (1 + pct / 100);
-                                                    const finalVal = parseFloat(computed.toFixed(2).replace(/\.00$/, ''));
-                                                    onOverallOverrideChange(editingId, finalVal);
-                                                }}
-                                                style={{ flex: 1, cursor: 'pointer', accentColor: '#3b82f6' }}
-                                            />
-                                        </div>
-                                    )}
-                                </div>
-                                <div className="form-group">
-                                    <label>Unit</label>
-                                    <input
-                                        value={kpis[editingId].unit}
-                                        onChange={e => setKpis(prev => ({ ...prev, [editingId]: { ...prev[editingId], unit: e.target.value } }))}
-                                    />
-                                </div>
-                                <div className="form-group">
-                                    <label>Calculation Formula</label>
-                                    <select
-                                        value={kpis[editingId].formula}
-                                        onChange={e => setKpis(prev => ({
-                                            ...prev,
-                                            [editingId]: {
-                                                ...prev[editingId],
-                                                formula: e.target.value as FormulaType,
-                                                overallOverride: undefined
-                                            }
-                                        }))}
-                                    >
-                                        <option value="NONE">None (Leaf Node)</option>
-                                        <option value="SUM">Sum of Children (+)</option>
-                                        <option value="PRODUCT">Product of Children (×)</option>
-                                        <option value="AVERAGE">Average of Children (avg)</option>
-                                        <option value="CUSTOM">Semantic Formula (custom)</option>
-                                    </select>
-                                </div>
-                            </div>
-                            {kpis[editingId].formula === 'CUSTOM' && (
-                                <div className="form-group">
-                                    <label>Custom Logic (e.g. Revenue - TotalCosts)</label>
-                                    <div className="formula-input-wrapper">
-                                        <input
-                                            id="modal-custom-formula"
-                                            value={kpis[editingId].customFormula || ''}
-                                            placeholder="e.g. Revenue - Cost"
-                                            onChange={e => {
-                                                const val = e.target.value;
-                                                setKpis(prev => ({ ...prev, [editingId]: { ...prev[editingId], customFormula: val } }));
+            <KPISettingsModal
+                isOpen={!!editingId}
+                onClose={() => setEditingId(null)}
+                editingId={editingId}
+                kpis={kpis}
+                setKpis={setKpis}
+                calculatedValues={calculatedValues}
+                appState={appState}
+                onOverallOverrideChange={onOverallOverrideChange}
+                onDeleteKPI={onDeleteKPI}
+                monthLabels={monthLabels}
+                logActivity={logActivity}
+            />
 
-                                                const cursor = e.target.selectionStart || 0;
-                                                const textBefore = val.substring(0, cursor);
-                                                const match = textBefore.match(/[A-Za-z0-9_]*$/);
-
-                                                if (match && match[0].length > 0) {
-                                                    const search = match[0].toLowerCase();
-                                                    const suggestions = Object.values(kpis)
-                                                        .filter(k =>
-                                                            (k.label.toLowerCase().includes(search) || k.label.replace(/\s+/g, '').toLowerCase().includes(search)) &&
-                                                            k.label.toLowerCase() !== search
-                                                        )
-                                                        .slice(0, 10);
-                                                    setFormulaSuggestions(suggestions);
-                                                    setSuggestionIndex(0);
-                                                } else {
-                                                    setFormulaSuggestions([]);
-                                                }
-                                            }}
-                                            onKeyDown={e => {
-                                                if (formulaSuggestions.length > 0) {
-                                                    if (e.key === 'ArrowDown') {
-                                                        e.preventDefault();
-                                                        setSuggestionIndex(prev => (prev + 1) % formulaSuggestions.length);
-                                                    } else if (e.key === 'ArrowUp') {
-                                                        e.preventDefault();
-                                                        setSuggestionIndex(prev => (prev - 1 + formulaSuggestions.length) % formulaSuggestions.length);
-                                                    } else if (e.key === 'Enter' || e.key === 'Tab') {
-                                                        e.preventDefault();
-                                                        const selected = formulaSuggestions[suggestionIndex];
-                                                        const currentVal = kpis[editingId].customFormula || '';
-                                                        const input = document.getElementById('modal-custom-formula') as HTMLInputElement;
-                                                        const cursor = input.selectionStart || 0;
-                                                        const textBefore = currentVal.substring(0, cursor);
-                                                        const textAfter = currentVal.substring(cursor);
-                                                        const match = textBefore.match(/[A-Za-z0-9_]*$/);
-                                                        const prefix = textBefore.substring(0, textBefore.length - (match ? match[0].length : 0));
-
-                                                        const newVal = prefix + selected.label + textAfter;
-                                                        setKpis(prev => ({ ...prev, [editingId]: { ...prev[editingId], customFormula: newVal } }));
-                                                        setFormulaSuggestions([]);
-                                                    } else if (e.key === 'Escape') {
-                                                        setFormulaSuggestions([]);
-                                                    }
-                                                }
-                                            }}
-                                            onBlur={() => setTimeout(() => setFormulaSuggestions([]), 200)}
-                                        />
-                                        {formulaSuggestions.length > 0 && (
-                                            <div className="formula-suggestions-dropdown modal-suggestions">
-                                                {formulaSuggestions.map((s, i) => (
-                                                    <div
-                                                        key={`${s.id}-${i}`}
-                                                        className={`suggestion-item ${i === suggestionIndex ? 'active' : ''}`}
-                                                        onClick={() => {
-                                                            const currentVal = kpis[editingId].customFormula || '';
-                                                            const input = document.getElementById('modal-custom-formula') as HTMLInputElement;
-                                                            const cursor = input.selectionStart || 0;
-                                                            const textBefore = currentVal.substring(0, cursor);
-                                                            const textAfter = currentVal.substring(cursor);
-                                                            const match = textBefore.match(/[A-Za-z0-9_]*$/);
-                                                            const prefix = textBefore.substring(0, textBefore.length - (match ? match[0].length : 0));
-                                                            const newVal = prefix + s.label + textAfter;
-                                                            setKpis(prev => ({ ...prev, [editingId]: { ...prev[editingId], customFormula: newVal } }));
-                                                            setFormulaSuggestions([]);
-                                                        }}
-                                                    >
-                                                        {s.label}
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                            )}
-                            <div className="form-row">
-                                <div className="form-group">
-                                    <label>Business Owner</label>
-                                    <input
-                                        value={kpis[editingId].semantic?.businessOwner || ''}
-                                        onChange={e => setKpis(prev => ({
-                                            ...prev,
-                                            [editingId]: {
-                                                ...prev[editingId],
-                                                semantic: { ...prev[editingId].semantic, businessOwner: e.target.value }
-                                            }
-                                        }))}
-                                    />
-                                </div>
-                                <div className="form-group">
-                                    <label>Data Source</label>
-                                    <input
-                                        value={kpis[editingId].semantic?.dataSource || ''}
-                                        onChange={e => setKpis(prev => ({
-                                            ...prev,
-                                            [editingId]: {
-                                                ...prev[editingId],
-                                                semantic: { ...prev[editingId].semantic, dataSource: e.target.value }
-                                            }
-                                        }))}
-                                    />
-                                </div>
-                            </div>
-                            <div className="modal-section-divider" style={{ height: '1px', background: '#e2e8f0', margin: '20px 0' }}></div>
-
-                            <div className="bulk-adjust-section" style={{ background: '#f8fafc', padding: '24px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                                <h3 style={{ fontSize: '0.9rem', marginBottom: '20px', color: '#3b82f6', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Bulk Adjust Values</h3>
-                                <div className="form-row" style={{ display: 'flex', flexWrap: 'wrap', gap: '20px' }}>
-                                    <div className="form-group" style={{ flex: '1 1 300px' }}>
-                                        <label style={{ fontSize: '0.75rem', marginBottom: '8px', color: '#64748b', fontWeight: 600 }}>Adjustment Range</label>
-                                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                                            <select
-                                                style={{ flex: 1, padding: '10px', fontSize: '0.85rem', background: 'white', border: '1px solid #cbd5e1', color: '#1e293b', borderRadius: '8px' }}
-                                                value={bulkStartMonth} onChange={e => setBulkStartMonth(parseInt(e.target.value))}
-                                            >
-                                                {months.map((m, i) => <option key={`${m}-${i}`} value={i}>{m}</option>)}
-                                            </select>
-                                            <select
-                                                style={{ width: '100px', padding: '10px', fontSize: '0.85rem', background: 'white', border: '1px solid #cbd5e1', color: '#1e293b', borderRadius: '8px' }}
-                                                value={bulkStartYear} onChange={e => setBulkStartYear(parseInt(e.target.value))}
-                                            >
-                                                {[2023, 2024, 2025, 2026].map(y => <option key={`start-year-${y}`} value={y}>{y}</option>)}
-                                            </select>
-                                            <span style={{ color: '#94a3b8', fontWeight: 500 }}>to</span>
-                                            <select
-                                                style={{ flex: 1, padding: '10px', fontSize: '0.85rem', background: 'white', border: '1px solid #cbd5e1', color: '#1e293b', borderRadius: '8px' }}
-                                                value={bulkEndMonth} onChange={e => setBulkEndMonth(parseInt(e.target.value))}
-                                            >
-                                                {months.map((m, i) => <option key={`end-${m}-${i}`} value={i}>{m}</option>)}
-                                            </select>
-                                            <select
-                                                style={{ width: '100px', padding: '10px', fontSize: '0.85rem', background: 'white', border: '1px solid #cbd5e1', color: '#1e293b', borderRadius: '8px' }}
-                                                value={bulkEndYear} onChange={e => setBulkEndYear(parseInt(e.target.value))}
-                                            >
-                                                {[2023, 2024, 2025, 2026].map(y => <option key={`end-year-${y}`} value={y}>{y}</option>)}
-                                            </select>
-                                        </div>
-                                    </div>
-                                    <div className="form-group" style={{ flex: '1 1 200px' }}>
-                                        <label style={{ fontSize: '0.75rem', marginBottom: '8px', color: '#64748b', fontWeight: 600 }}>Percentage Change</label>
-                                        <div style={{ display: 'flex', gap: '12px' }}>
-                                            <div style={{ position: 'relative', flex: 1 }}>
-                                                <input
-                                                    type="number"
-                                                    step="0.1"
-                                                    style={{ width: '100%', padding: '12px 16px', fontSize: '1.1rem', background: 'white', border: '1px solid #cbd5e1', color: '#1e293b', borderRadius: '8px', outline: 'none', fontWeight: 600 }}
-                                                    value={bulkPercentage}
-                                                    onChange={e => setBulkPercentage(e.target.value)}
-                                                />
-                                                <span style={{ position: 'absolute', right: '16px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8', fontWeight: 600 }}>%</span>
-                                            </div>
-                                            <button
-                                                onClick={handleBulkAdjust}
-                                                disabled={!bulkPercentage || bulkPercentage === '0'}
-                                                style={{
-                                                    padding: '0 32px',
-                                                    fontSize: '0.95rem',
-                                                    background: '#3b82f6',
-                                                    color: 'white',
-                                                    border: 'none',
-                                                    borderRadius: '8px',
-                                                    cursor: (bulkPercentage && bulkPercentage !== '0') ? 'pointer' : 'not-allowed',
-                                                    opacity: (bulkPercentage && bulkPercentage !== '0') ? 1 : 0.5,
-                                                    fontWeight: 700,
-                                                    transition: 'all 0.2s',
-                                                    boxShadow: '0 4px 6px -1px rgba(59, 130, 246, 0.2)'
-                                                }}
-                                            >
-                                                Apply
-                                            </button>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="modal-footer">
-                            <button className="danger-btn" onClick={() => onDeleteKPI(editingId)}>
-                                <Trash2 size={16} /> Delete Branch
-                            </button>
-                            <button className="primary-btn" onClick={() => setEditingId(null)}>
-                                Save Changes
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {showForecastModal && (
-                <div className="modal-overlay">
-                    <div className="modal-content">
-                        <div className="modal-header">
-                            <h2>Generate Scenario Forecast</h2>
-                            <button className="close-btn" onClick={() => setShowForecastModal(false)}><X size={20} /></button>
-                        </div>
-                        <div className="modal-body">
-                            <p className="text-slate-600 text-sm mb-4">Select an algorithmic method to project the next 12 months for this scenario based on historical actuals.</p>
-                            <div className="form-group">
-                                <label>Forecasting Method</label>
-                                <select
-                                    value={forecastConfig.method}
-                                    onChange={e => setForecastConfig(prev => ({ ...prev, method: e.target.value as ForecastMethod }))}
-                                >
-                                    <option value="LINEAR_TREND">Linear Trend (Regression)</option>
-                                    <option value="MOVING_AVERAGE">Moving Average (3-Period)</option>
-                                    <option value="FLAT_GROWTH">Compound Growth (%)</option>
-                                    <option value="SEASONAL_NAIVE">Seasonal Naive</option>
-                                </select>
-                            </div>
-                            {forecastConfig.method === 'FLAT_GROWTH' && (
-                                <div className="form-group">
-                                    <label>Annual Growth Rate (%)</label>
-                                    <input
-                                        type="number"
-                                        value={forecastConfig.growthRate}
-                                        onChange={e => setForecastConfig(prev => ({ ...prev, growthRate: Number(e.target.value) }))}
-                                    />
-                                </div>
-                            )}
-                        </div>
-                        <div className="modal-footer">
-                            <button className="ghost-btn" onClick={() => setShowForecastModal(false)}>Cancel</button>
-                            <button className="primary-btn flex-center gap-2" onClick={onForecast}>
-                                <TrendingUp size={16} /> Execute Forecast
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
+            <ForecastModal
+                isOpen={showForecastModal}
+                onClose={() => setShowForecastModal(false)}
+                forecastConfig={forecastConfig}
+                setForecastConfig={setForecastConfig}
+                onForecast={onForecast}
+            />
         </>
     );
 };

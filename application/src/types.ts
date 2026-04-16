@@ -7,7 +7,8 @@ export type ForecastMethod = 'LINEAR_TREND' | 'MOVING_AVERAGE' | 'FLAT_GROWTH' |
 export const TYPES_VERSION = '1.0.1';
 
 export interface TimeSeriesValue {
-  month: string;
+  month: string | number;
+  year?: number;
   actual: number;
   forecast?: number;
   simulated?: number;
@@ -88,7 +89,6 @@ export interface AppState {
   scenarios: Record<string, Scenario>;
   activeScenarioId: string;
   baselineScenarioId: string; // Scenario to compare against
-  spreadsheetSelectedScenarios?: string[];
   dateRange: DateRange;
   activityLog: LogEntry[];
   lockMonthIdx?: number;
@@ -100,11 +100,11 @@ export interface AppState {
   rawImportData?: (string | number | null)[][];
   sheets?: Record<string, (string | number | null)[][]>;
   spreadsheetSelectedScenarios?: string[];
-  isSyncEnabled?: boolean;
   showCharts?: boolean;
   dateRangeMode?: 'MTD' | 'YTD';
   displayMode?: 'monthly' | 'annual';
   selectedMonth?: string; // Key: "YYYY-MM"
+  columnMappings: Record<string, string>;
 }
 
 export interface SimulationState {

@@ -32,7 +32,7 @@ interface KPINodeProps {
     simulationType: 'PERCENT' | 'ABSOLUTE';
     calculatedValue: number[];
     baselineData: number[];
-    calculatedScenarioValues?: Record<string, number[]>;
+    calculatedScenarioValues?: Record<string, Record<string, number[]>>;
     selectedScenarioIds?: string[];
     scenarios?: Record<string, any>;
     monthLabels: string[];
@@ -102,12 +102,23 @@ const KPINode = ({ data }: NodeProps<KPINodeProps>) => {
     const base = Array.isArray(baselineData) ? baselineData : [];
 
     const periodCount = Math.max(0, calc.length - 1);
-    const rawVal = calc[periodCount];
     
-    // currentVal should represent what's actually displayed (prefer override if provided in calc)
+    // Determine which index to display based on Monthly vs Annual mode
+    let displayIdx = periodCount;
+    if (appState?.displayMode === 'monthly' && appState?.selectedMonth) {
+        const [selY, selM] = appState.selectedMonth.split('-').map(Number);
+        const startM = appState.dateRange?.startMonth ?? 0;
+        const startY = appState.dateRange?.startYear ?? 2024;
+        const diff = (selY * 12 + selM) - (startY * 12 + startM);
+        if (diff >= 0 && diff < periodCount) {
+            displayIdx = diff;
+        }
+    }
+
+    const rawVal = calc[displayIdx];
     const currentVal = (typeof rawVal === 'number' && !isNaN(rawVal)) ? rawVal : 0;
 
-    const rawBase = base[periodCount] ?? calc[periodCount];
+    const rawBase = base[displayIdx] ?? calc[displayIdx];
     const baselineVal = (typeof rawBase === 'number' && !isNaN(rawBase)) ? rawBase : 0;
 
     const [isEditing, setIsEditing] = useState(false);
@@ -409,8 +420,8 @@ const KPINode = ({ data }: NodeProps<KPINodeProps>) => {
                         <div style={{ display: 'flex', flexDirection: 'column', width: '100%', gap: '4px', marginTop: '4px' }}>
                             {selectedScenarioIds.map(scenId => {
                                 const scenName = scenarios?.[scenId]?.name || 'Scenario';
-                                const sVals = calculatedScenarioValues?.[scenId] || [];
-                                const sVal = sVals[periodCount] ?? 0;
+                                const sVals = calculatedScenarioValues?.[scenId]?.[id] || [];
+                                const sVal = sVals[displayIdx] ?? 0;
                                 const sVar = (typeof sVal === 'number' && typeof baselineVal === 'number' && baselineVal !== 0)
                                     ? ((sVal - baselineVal) / Math.abs(baselineVal)) * 100
                                     : 0;

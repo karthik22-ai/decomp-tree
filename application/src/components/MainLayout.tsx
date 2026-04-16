@@ -25,7 +25,7 @@ interface MainLayoutProps {
     dateRangeMode?: 'MTD' | 'YTD';
     onDateRangeModeChange?: (mode: 'MTD' | 'YTD') => void;
     onCollapseAll?: () => void;
-    onExpandAll?: () => void;
+    onExpandAll?: (level?: number) => void;
 }
 
 const MainLayout: React.FC<MainLayoutProps> = ({
