@@ -38,8 +38,20 @@ export const useScenarios = ({ appState, setAppState, kpis }: UseScenariosProps)
       delete newScenarios[id];
 
       const remainingIds = Object.keys(newScenarios);
+      
       const nextActiveId = prev.activeScenarioId === id
-        ? (remainingIds.includes('base') ? 'base' : remainingIds[0])
+        ? (() => {
+            // Prefer Actuals if available
+            if (remainingIds.includes('actual') && id !== 'actual') return 'actual';
+            // Otherwise first available promoted scenario
+            const promoted = remainingIds.find(rid => rid !== id && newScenarios[rid].isPromoted);
+            if (promoted) return promoted;
+            // Otherwise first available non-base
+            const nonBase = remainingIds.find(rid => rid !== id && rid !== 'base');
+            if (nonBase) return nonBase;
+            // Fallback to base
+            return 'base';
+          })()
         : prev.activeScenarioId;
       const nextBaselineId = prev.baselineScenarioId === id
         ? (remainingIds.includes('base') ? 'base' : remainingIds[0])
@@ -104,11 +116,22 @@ export const useScenarios = ({ appState, setAppState, kpis }: UseScenariosProps)
     });
   }, [setAppState]);
 
+  const onToggleLock = useCallback((id: string) => {
+    setAppState(prev => {
+      const next = { ...prev };
+      if (next.scenarios[id]) {
+        next.scenarios[id] = { ...next.scenarios[id], isLocked: !next.scenarios[id].isLocked };
+      }
+      return next;
+    });
+  }, [setAppState]);
+
   return {
     onScenarioAdd,
     onScenarioDelete,
     onScenarioSelect,
     handleMakeBaseScenario,
-    onRenameScenario
+    onRenameScenario,
+    onToggleLock
   };
 };

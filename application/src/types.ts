@@ -42,7 +42,8 @@ export interface KPIData {
   lockedMonths?: Record<string, boolean>; // Key: "YYYY-MM"
   pageId?: string; // ID of the page this KPI belongs to
   isScenarioNode?: boolean; // True if this node represents a scenario split
-  comment?: string; // User comment for this KPI node
+  comment?: string; // Legacy field for reverse compatibility
+  commentaryPages?: { id: string; name: string; content: string }[]; // New multi-page commentary
   monthlyComments?: Record<string, string>; // Key: "YYYY-MM"
 }
 
@@ -52,6 +53,7 @@ export interface Scenario {
   kpis: Record<string, KPIData>;
   createdAt: string;
   isPromoted?: boolean; // If true, this is an original scenario from raw data
+  isLocked?: boolean; // If true, any edit to this scenario will create a new branch
 }
 
 export interface Project {

@@ -2,7 +2,6 @@ import React, { useState, useRef, useCallback, useMemo, useEffect, Component, ty
 import ReactFlow, {
     Background,
     Controls,
-    Panel,
     useNodesState,
     useEdgesState,
     type Connection,
@@ -13,15 +12,13 @@ import ReactFlow, {
 import type { Edge, Node } from 'reactflow';
 import 'reactflow/dist/style.css';
 import {
-    Plus, X, Trash2, Search,
-    Layers, Sliders, Lock, TrendingUp, Edit2
+    Plus, X, TrendingUp
 } from 'lucide-react';
 import { initialKPIs } from '../data';
 import { WelcomeScreen } from './WelcomeScreen';
 import { RawDataView } from './RawDataView';
 import { apiService } from '../services/api';
-import type { AppState, KPIData, FormulaType, ForecastMethod, Scenario, LogEntry } from '../types';
-import * as dagre from 'dagre';
+import type { AppState, KPIData, ForecastMethod, Scenario, LogEntry } from '../types';
 import KPINode from './KPINode';
 import MainLayout from './MainLayout';
 import SpreadsheetView from './SpreadsheetView';
@@ -41,6 +38,7 @@ import { useAutoSave } from '../hooks/useAutoSave';
 import { CanvasPanel } from './CanvasPanel';
 import KPISettingsModal from './KPISettingsModal';
 import ForecastModal from './ForecastModal';
+import KPIDetailsPanel from './KPIDetailsPanel';
 
 const NODE_TYPES = { kpiNode: KPINode };
 const EDGE_TYPES = {};
@@ -118,6 +116,8 @@ interface SimulationCanvasInnerProps {
     logActivity: (entry: Omit<LogEntry, 'id' | 'timestamp'>) => void;
     onMakeBaseScenario: (id?: string) => void;
     onSaveAllEdits?: () => void;
+    onRenameScenario: (id: string, name: string) => void;
+    onToggleLock: (id: string) => void;
     displayMode?: 'annual' | 'monthly';
     selectedMonth?: string;
 }
@@ -161,11 +161,15 @@ const SimulationCanvasInner: React.FC<SimulationCanvasInnerProps> = ({
     scenarioFilterSearch = '',
     setScenarioFilterSearch,
     onCommentChange,
+    onRenameScenario,
     onMakeBaseScenario,
-    onSaveAllEdits
+    onSaveAllEdits,
+    onToggleLock,
+    activeScenarioId
 }: SimulationCanvasInnerProps) => {
     const [nodes, setNodes, onNodesChange] = useNodesState([]);
     const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+    const [selectedKpiIds, setSelectedKpiIds] = useState<string[]>([]);
 
     // Use stable references for React Flow types
     const nodeTypes = useMemo(() => NODE_TYPES, []);
@@ -234,6 +238,17 @@ const SimulationCanvasInner: React.FC<SimulationCanvasInnerProps> = ({
             }, true);
         });
     }, [setKpis]);
+    
+    const onNodeClick = useCallback((_: any, node: Node) => {
+        setSelectedKpiIds(prev => {
+            if (prev.includes(node.id)) return prev;
+            return [...prev, node.id];
+        });
+    }, []);
+
+    const onRemoveFromSelection = useCallback((id: string) => {
+        setSelectedKpiIds(prev => prev.filter(kId => kId !== id));
+    }, []);
 
     // Use the custom layout hook
     const { positions, edges: layoutEdges } = useKPILayout({ kpis });
@@ -380,6 +395,8 @@ const SimulationCanvasInner: React.FC<SimulationCanvasInnerProps> = ({
                 onEdgesDelete={onEdgesDelete}
                 nodeTypes={nodeTypes}
                 edgeTypes={edgeTypes}
+                onNodeClick={onNodeClick}
+                onPaneClick={() => setSelectedKpiIds([])}
                 fitView
                 minZoom={0.005}
                 maxZoom={2}
@@ -418,6 +435,7 @@ const SimulationCanvasInner: React.FC<SimulationCanvasInnerProps> = ({
                     setIsPresentationMode={setIsPresentationMode}
                     isScenarioOpen={isScenarioOpen}
                     setIsScenarioOpen={setIsScenarioOpen}
+                    activeScenarioId={activeScenarioId}
                     selectedScenarioIds={selectedScenarioIds}
                     scenarios={scenarios}
                     scenarioFilterSearch={scenarioFilterSearch}
@@ -426,11 +444,35 @@ const SimulationCanvasInner: React.FC<SimulationCanvasInnerProps> = ({
                     onScenarioSelect={onScenarioSelect}
                     onScenarioAdd={onScenarioAdd}
                     onScenarioDelete={onScenarioDelete}
+                    onRenameScenario={onRenameScenario}
                     onMakeBaseScenario={onMakeBaseScenario}
+                    onToggleLock={onToggleLock}
                     onAddRoot={onAddRoot}
                     setAppState={setAppState}
                 />
             </ReactFlow>
+
+            <KPIDetailsPanel 
+                isOpen={selectedKpiIds.length > 0}
+                onClose={() => setSelectedKpiIds([])}
+                selectedIds={selectedKpiIds}
+                kpis={kpis as any}
+                calculatedValues={calculatedValues as any}
+                baseValues={baseValues as any}
+                monthLabels={monthLabels}
+                onSettings={onSettings}
+                onCommentChange={onCommentChange}
+                onRemoveFromSelection={onRemoveFromSelection}
+                activeScenarioId={activeScenarioId}
+                scenarios={scenarios}
+                onScenarioSelect={(id) => setAppState(prev => ({ ...prev, activeScenarioId: id }))}
+                onKPISelect={(id) => {
+                    setSelectedKpiIds(prev => {
+                        if (prev.includes(id)) return prev;
+                        return [...prev, id];
+                    });
+                }}
+            />
         </div>
     );
 };
@@ -539,7 +581,8 @@ const SimulationCanvas: React.FC<SimulationCanvasProps> = ({ projectId, isSample
                         isSyncEnabled: true,
                         valueDisplayType: 'absolute',
                         pages: [{ id: 'page-1', name: 'Page 1' }],
-                        activePageId: 'page-1'
+                        activePageId: 'page-1',
+                        columnMappings: {}
                     });
                 }
             } catch (e) {
@@ -563,7 +606,7 @@ const SimulationCanvas: React.FC<SimulationCanvasProps> = ({ projectId, isSample
             appState.dateRange.startYear,
             appState.dateRange.endMonth,
             appState.dateRange.endYear
-        ).map(m => m.label.split(' ')[0]);
+        ).map(m => m.label); // Returns "Jan 2024" format
     }, [appState.dateRange]);
 
     const filteredKpis = useMemo(() => {
@@ -602,7 +645,7 @@ const SimulationCanvas: React.FC<SimulationCanvasProps> = ({ projectId, isSample
     const [forecastConfig, setForecastConfig] = useState<{ method: ForecastMethod, growthRate: number }>({ method: 'LINEAR_TREND', growthRate: 5 });
 
     // Use the auto-save hook
-    useAutoSave({ projectId, appState });
+    useAutoSave({ projectId, appState, isSampleMode, isLoadingData });
 
     // Use the KPI calculation hook
     const { 
@@ -622,7 +665,8 @@ const SimulationCanvas: React.FC<SimulationCanvasProps> = ({ projectId, isSample
         onScenarioDelete,
         onScenarioSelect,
         handleMakeBaseScenario,
-        onRenameScenario
+        onRenameScenario,
+        onToggleLock
     } = useScenarios({ appState, setAppState, kpis });
 
 
@@ -636,10 +680,12 @@ const SimulationCanvas: React.FC<SimulationCanvasProps> = ({ projectId, isSample
                 return prev;
             }
 
-            // If scenario is promoted (Original), clone it before making any changes
-            if (nextScenario.isPromoted) {
+            // Decouple protection logic: branch if isLocked OR if it's the Base scenario (which is always protected)
+            const isProtected = nextScenario.isLocked || (activeId === 'base' && prev.baseScenarioLocked !== false);
+
+            if (isProtected) {
                 const newId = `scenario-${Date.now()}`;
-                const newName = `Scenario ${Object.keys(prev.scenarios).length}`;
+                const newName = `Branch of ${nextScenario.name}`;
                 const clonedKpis = JSON.parse(JSON.stringify(nextScenario.kpis));
                 
                 return {
@@ -651,7 +697,8 @@ const SimulationCanvas: React.FC<SimulationCanvasProps> = ({ projectId, isSample
                             name: newName,
                             kpis: updater(clonedKpis),
                             createdAt: new Date().toISOString(),
-                            isPromoted: false
+                            isPromoted: false,
+                            isLocked: false // New branches are unlocked by default
                         }
                     },
                     activeScenarioId: newId
@@ -779,6 +826,8 @@ const SimulationCanvas: React.FC<SimulationCanvasProps> = ({ projectId, isSample
             return { ...prev, scenarios: nextScenarios };
         });
     }, []);
+
+
     const handleCustomDataImport = useCallback((newKpis: Record<string, KPIData>) => {
         setIsCalculating(true);
         const activePageId = appState.activePageId;
@@ -1089,11 +1138,27 @@ const SimulationCanvas: React.FC<SimulationCanvasProps> = ({ projectId, isSample
     }, [setKpis, activePageId]);
 
 
-    const onCommentChange = useCallback((id: string, comment: string) => {
-        setKpis(prev => ({
-            ...prev,
-            [id]: { ...prev[id], comment }
-        }), true);
+    const onCommentChange = useCallback((id: string, comment: string | any[]) => {
+        setKpis(prev => {
+            const kpi = prev[id];
+            if (!kpi) return prev;
+
+            // Deep comparison to prevent accidental branching on non-changes
+            if (typeof comment === 'string') {
+                if (kpi.comment === comment) return prev;
+            } else if (Array.isArray(comment)) {
+                if (JSON.stringify(kpi.commentaryPages) === JSON.stringify(comment)) return prev;
+            }
+
+            return {
+                ...prev,
+                [id]: { 
+                    ...kpi, 
+                    commentaryPages: Array.isArray(comment) ? comment : kpi.commentaryPages, 
+                    comment: typeof comment === 'string' ? comment : kpi.comment 
+                }
+            };
+        });
     }, [setKpis]);
 
     const onAddPage = useCallback(() => {
@@ -1411,7 +1476,8 @@ const SimulationCanvas: React.FC<SimulationCanvasProps> = ({ projectId, isSample
                             name: name,
                             kpis: scenarioKpis as Record<string, KPIData>,
                             createdAt: new Date(timestamp).toISOString(),
-                            isPromoted: true // Marked as read-only original
+                            isPromoted: true, // Marked as read-only original
+                            isLocked: true // Default to locked to protect original data
                         };
                     });
                 }
@@ -1461,7 +1527,8 @@ const SimulationCanvas: React.FC<SimulationCanvasProps> = ({ projectId, isSample
                         name: 'Original Data',
                         kpis: processedKpis,
                         createdAt: new Date().toISOString(),
-                        isPromoted: true
+                        isPromoted: true,
+                        isLocked: true
                     };
                     nextActiveId = id;
                     nextBaselineId = id;
@@ -1826,10 +1893,11 @@ const SimulationCanvas: React.FC<SimulationCanvasProps> = ({ projectId, isSample
                             <ReactFlowProvider>
                               <CanvasErrorBoundary>
                                 <SimulationCanvasInner
+                                    onCommentChange={onCommentChange}
                                     kpis={filteredKpis}
                                     setKpis={setKpis}
                                     calculatedValues={calculatedValues}
-                                    baseValues={baseValues}
+                                    baseValues={appState.scenarios[appState.activeScenarioId]?.kpis ? Object.fromEntries(Object.entries(appState.scenarios[appState.activeScenarioId].kpis).map(([id]) => [id, baseValues[id] || []])) : baseValues}
                                     monthLabels={monthLabels}
                                     activePageId={appState.activePageId}
                                     appState={appState}
@@ -1866,6 +1934,8 @@ const SimulationCanvas: React.FC<SimulationCanvasProps> = ({ projectId, isSample
                                     onSaveAllEdits={onSaveAllEdits}
                                     logActivity={logActivity}
                                     onMakeBaseScenario={handleMakeBaseScenario}
+                                    onRenameScenario={onRenameScenario}
+                                    onToggleLock={onToggleLock}
                                 />
                               </CanvasErrorBoundary>
                             </ReactFlowProvider>
@@ -1897,8 +1967,8 @@ const SimulationCanvas: React.FC<SimulationCanvasProps> = ({ projectId, isSample
                             onLabelChange={onLabelChange}
                             onUnitChange={onUnitChange}
                             onPullData={() => setCurrentView('/raw-data')}
-                            onCommentChange={onCommentChange}
                             onRenameScenario={onRenameScenario}
+                            onToggleLock={onToggleLock}
                             onCellCommentChange={onCellCommentChange}
                             calculatedScenarioValues={calculatedScenarioValues}
                             selectedScenarioIds={appState.spreadsheetSelectedScenarios || []}

@@ -5,7 +5,7 @@ import { Save, Layers, Database, Calculator, Download, Upload, Lock, Unlock, Plu
 import { getMonthsInRange } from '../utils/dateRange';
 import { apiService } from '../services/api';
 import * as XLSX from 'xlsx';
-
+import ScenarioSelector from './ScenarioSelector';
 
 interface SpreadsheetViewProps {
     kpis: Record<string, KPIData>;
@@ -41,6 +41,7 @@ interface SpreadsheetViewProps {
     onMakeBaseScenario?: () => void;
     onCommentChange?: (id: string, comment: string) => void;
     onRenameScenario?: (id: string, name: string) => void;
+    onToggleLock?: (id: string) => void;
     onCellCommentChange?: (id: string, monthIdx: number, comment: string) => void;
     onSaveAllEdits?: () => void;
 }
@@ -81,6 +82,7 @@ const SpreadsheetView: React.FC<SpreadsheetViewProps> = ({
     onMakeBaseScenario,
     onCommentChange,
     onRenameScenario,
+    onToggleLock,
     onCellCommentChange,
     onSaveAllEdits,
 }) => {
@@ -709,134 +711,36 @@ const SpreadsheetView: React.FC<SpreadsheetViewProps> = ({
                 </div>
 
                 <div className="toolbar-right">
-                    <div className="scenario-selector" style={{ alignItems: 'flex-start' }}>
-                        <Layers size={16} style={{ marginTop: '4px' }} />
-                        <span className="label" style={{ marginTop: '4px' }}>Scenarios:</span>
-                        <div style={{ position: 'relative' }}>
-                            <div
-                                onClick={() => setIsScenarioOpen(!isScenarioOpen)}
-                                style={{
-                                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                                    border: '1px solid #D0D5DD', borderRadius: '6px', padding: '6px 12px',
-                                    backgroundColor: 'white', minWidth: '180px', cursor: 'pointer',
-                                    fontSize: '13px', color: '#344054'
-                                }}
-                            >
-                                <span style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', maxWidth: '140px' }}>
-                                    {selectedScenarioIds.length === 1
-                                        ? (scenarios[selectedScenarioIds[0]]?.name || '1 Selected')
-                                        : `${selectedScenarioIds.length} Selected`}
-                                </span>
-                                <Sliders size={14} style={{ marginLeft: 8, color: '#98A2B3' }} />
-                            </div>
-
-                            {isScenarioOpen && (
-                                <>
-                                    <div onClick={() => setIsScenarioOpen(false)} style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 998 }} />
-                                    <div style={{ position: 'absolute', top: '100%', left: 0, marginTop: '4px', width: 220, background: 'white', border: '1px solid #EAECF0', borderRadius: 8, boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)', zIndex: 999, padding: 12 }}>
-                                        <div style={{ position: 'relative', marginBottom: 12 }}>
-                                            <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#98A2B3' }} />
-                                            <input
-                                                autoFocus
-                                                placeholder="Search scenarios..."
-                                                value={scenarioFilterSearch}
-                                                onChange={(e) => setScenarioFilterSearch(e.target.value)}
-                                                style={{ width: '100%', padding: '6px 10px 6px 30px', borderRadius: 6, border: '1px solid #D0D5DD', fontSize: 12, outline: 'none' }}
-                                            />
-                                        </div>
-                                        <div style={{ maxHeight: 200, overflowY: 'auto' }}>
-                                            {Object.values(scenarios)
-                                                .filter(s => s.name.toLowerCase().includes(scenarioFilterSearch.toLowerCase()))
-                                                .map(s => {
-                                                    const isSelected = selectedScenarioIds.includes(s.id);
-                                                    const isRenaming = renamingScenarioId === s.id;
-                                                    return (
-                                                        <div
-                                                            key={s.id}
-                                                            onClick={() => {
-                                                                if (isRenaming) return;
-                                                                if (isSelected) {
-                                                                    const next = selectedScenarioIds.filter(id => id !== s.id);
-                                                                    if (next.length > 0) {
-                                                                        onSelectedScenariosChange(next);
-                                                                        if (onScenarioSelect) onScenarioSelect(next[next.length - 1]);
-                                                                    }
-                                                                } else {
-                                                                    const next = [...selectedScenarioIds, s.id];
-                                                                    onSelectedScenariosChange(next);
-                                                                    if (onScenarioSelect) {
-                                                                        onScenarioSelect(s.id);
-                                                                    }
-                                                                }
-                                                            }}
-                                                            style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 4px', cursor: 'pointer', fontSize: 13 }}
-                                                        >
-                                                            <div style={{ width: 14, height: 14, borderRadius: '50%', border: isSelected ? '4px solid #1D4ED8' : '1px solid #D0D5DD', background: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                                                            </div>
-                                                            {isRenaming ? (
-                                                                <input
-                                                                    autoFocus
-                                                                    value={renameScenarioText}
-                                                                    onChange={(e) => setRenameScenarioText(e.target.value)}
-                                                                    onBlur={() => {
-                                                                        if (renameScenarioText.trim() && renameScenarioText !== s.name) {
-                                                                            onRenameScenario?.(s.id, renameScenarioText);
-                                                                        }
-                                                                        setRenamingScenarioId(null);
-                                                                    }}
-                                                                    onKeyDown={(e) => {
-                                                                        if (e.key === 'Enter') {
-                                                                            if (renameScenarioText.trim() && renameScenarioText !== s.name) {
-                                                                                onRenameScenario?.(s.id, renameScenarioText);
-                                                                            }
-                                                                            setRenamingScenarioId(null);
-                                                                        } else if (e.key === 'Escape') {
-                                                                            setRenamingScenarioId(null);
-                                                                        }
-                                                                    }}
-                                                                    style={{ flex: 1, border: '1px solid #1D4ED8', borderRadius: 4, padding: '2px 4px', fontSize: 13 }}
-                                                                />
-                                                            ) : (
-                                                                <span style={{ color: isSelected ? '#1D4ED8' : '#344054', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{s.name}</span>
-                                                            )}
-
-                                                            {s.isPromoted && (
-                                                                <span title="Original Data (Read-Only)" style={{ fontSize: '9px', background: '#fff7ed', color: '#c2410c', padding: '1px 4px', borderRadius: '4px', border: '1px solid #ffedd5', fontWeight: 600, flexShrink: 0, display: 'flex', alignItems: 'center', gap: '2px' }}>
-                                                                    <Lock size={10} /> ORIGINAL
-                                                                </span>
-                                                            )}
-                                                            {!isRenaming && !s.isPromoted && (
-                                                                <button
-                                                                    onClick={(e) => {
-                                                                        e.stopPropagation();
-                                                                        setRenamingScenarioId(s.id);
-                                                                        setRenameScenarioText(s.name);
-                                                                    }}
-                                                                    style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#64748B', display: 'flex', alignItems: 'center', padding: 4 }}
-                                                                >
-                                                                    <Edit2 size={12} />
-                                                                </button>
-                                                            )}
-                                                            {s.id !== 'base' && !s.isPromoted && onScenarioDelete && (
-                                                                <Trash2
-                                                                    size={14}
-                                                                    color="#ef4444"
-                                                                    style={{ cursor: 'pointer', opacity: 0.6, flexShrink: 0 }}
-                                                                    onClick={(e) => {
-                                                                        e.stopPropagation();
-                                                                        onScenarioDelete(s.id, e);
-                                                                    }}
-                                                                />
-                                                            )}
-                                                        </div>
-                                                    );
-                                                })}
-                                        </div>
-                                    </div>
-                                </>
-                            )}
-                        </div>
-                    </div>
+                    <ScenarioSelector
+                        scenarios={scenarios}
+                        selectedIds={selectedScenarioIds}
+                        onSelect={(id) => {
+                            if (selectedScenarioIds.includes(id)) {
+                                if (selectedScenarioIds.length > 1) {
+                                    onSelectedScenariosChange(selectedScenarioIds.filter(sid => sid !== id));
+                                }
+                            } else {
+                                onSelectedScenariosChange([...selectedScenarioIds, id]);
+                            }
+                        }}
+                        onToggle={(id) => {
+                            if (selectedScenarioIds.includes(id)) {
+                                if (selectedScenarioIds.length > 1) {
+                                    onSelectedScenariosChange(selectedScenarioIds.filter(sid => sid !== id));
+                                }
+                            } else {
+                                onSelectedScenariosChange([...selectedScenarioIds, id]);
+                            }
+                        }}
+                        onRename={onRenameScenario}
+                        onDelete={onScenarioDelete}
+                        onAdd={onScenarioAdd}
+                        onMakeBase={onMakeBaseScenario}
+                        onToggleLock={onToggleLock}
+                        mode="multiple"
+                        label="Scenarios"
+                        className="scenario-selector-container"
+                    />
 
                     <div style={{ width: '1px', height: '24px', background: '#cbd5e1', margin: '0 8px' }} />
 

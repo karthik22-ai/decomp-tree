@@ -122,9 +122,7 @@ const KPINode = ({ data }: NodeProps<KPINodeProps>) => {
     const baselineVal = (typeof rawBase === 'number' && !isNaN(rawBase)) ? rawBase : 0;
 
     const [isEditing, setIsEditing] = useState(false);
-    const [isCommenting, setIsCommenting] = useState(false);
     const [editValue, setEditValue] = useState('');
-    const [commentValue, setCommentValue] = useState(comment || '');
     const [showSlider, setShowSlider] = useState(false);
     const [sliderValue, setSliderValue] = useState(0);
     const [sliderBaseValue, setSliderBaseValue] = useState(0);
@@ -148,12 +146,6 @@ const KPINode = ({ data }: NodeProps<KPINodeProps>) => {
             inputRef.current.select();
         }
     }, [isEditing]);
-
-    useEffect(() => {
-        if (isCommenting && commentRef.current) {
-            commentRef.current.focus();
-        }
-    }, [isCommenting]);
 
     const handleEditStart = (e: React.MouseEvent) => {
         e.stopPropagation();
@@ -208,13 +200,6 @@ const KPINode = ({ data }: NodeProps<KPINodeProps>) => {
         setEditValue(computed.toFixed(2).replace(/\.00$/, ''));
     };
 
-    const handleCommentCommit = () => {
-        setIsCommenting(false);
-        if (onCommentChange && commentValue !== comment) {
-            onCommentChange(id, commentValue);
-        }
-    };
-
     const getCategoryColor = (formula: string, trend?: 'INCREASE' | 'DECREASE', defaultColor?: string) => { switch (formula) { case 'NONE': return '#3b82f6'; case 'SUM': case 'PRODUCT': case 'AVERAGE': return '#10B981'; case 'CUSTOM': return '#EC4899'; default: return defaultColor || '#64748B'; } };
 
     const isSimulated = (data.monthlyOverrides && Object.keys(data.monthlyOverrides).length > 0) || 
@@ -224,17 +209,48 @@ const KPINode = ({ data }: NodeProps<KPINodeProps>) => {
         <div
             className={`kpi-node valq-style ${isExpanded ? 'expanded' : ''} ${isSimulated ? 'simulated' : ''}`}
             style={{ '--node-accent': getCategoryColor(formula, data.desiredTrend, color) } as React.CSSProperties}
-            onClick={() => onToggleExpand(id)}
+            /* REMOVED onClick={() => onToggleExpand(id)} to prevent expansion on general click */
         >
             <div className="node-category-strip" style={{ background: getCategoryColor(formula, data.desiredTrend, color) }} />
 
             <Handle type="target" position={Position.Left} />
 
             <div className="node-main-content">
+                {appState?.activeScenarioId && appState.activeScenarioId !== 'base' && scenarios?.[appState.activeScenarioId] && (
+                    <div
+                        className="active-scenario-badge"
+                        style={{
+                            position: 'absolute',
+                            top: '-20px',
+                            left: '12px',
+                            fontSize: '9px',
+                            background: 'var(--node-accent)',
+                            color: 'white',
+                            padding: '1px 6px',
+                            borderRadius: '4px 4px 0 0',
+                            fontWeight: 600,
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.05em',
+                            boxShadow: '0 -2px 4px rgba(0,0,0,0.05)',
+                            pointerEvents: 'none'
+                        }}
+                    >
+                        {scenarios[appState.activeScenarioId].name}
+                    </div>
+                )}
                 <div className="node-top-row">
-                    <span className="node-label">{label}</span>
+                    <div className="node-info-row">
+                        <span className="node-label" title={label}>{label}</span>
+                        <div className="node-info-icons">
+                            {comment && (
+                                <div className="comment-indicator" title="Has commentary">
+                                    <MessageSquare size={10} />
+                                </div>
+                            )}
+                            <span className="node-unit">{unit}</span>
+                        </div>
+                    </div>
                     <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-                        {comment && <MessageSquare size={10} className="text-slate-400" />}
                         <span className="node-formula">{formula !== 'NONE' ? formula : ''}</span>
                     </div>
                 </div>
@@ -478,13 +494,6 @@ const KPINode = ({ data }: NodeProps<KPINodeProps>) => {
                     </button>
                 )}
                 <button className="icon-btn-sm" onClick={() => onSettings(id)} title="Node Settings"><Settings size={12} /></button>
-                <button
-                    className={`icon-btn-sm ${comment ? 'active' : ''}`}
-                    onClick={(e) => { e.stopPropagation(); setIsCommenting(!isCommenting); }}
-                    title="Add/Edit Comment"
-                >
-                    <MessageSquare size={12} />
-                </button>
                 <button className="icon-btn-sm" onClick={() => onAddChild(id)} title="Add Sub-KPI"><Plus size={12} /></button>
                 <button className="icon-btn-sm" onClick={(e) => { e.stopPropagation(); onSplitToPage(id); }} title="Split subtree to new page"><Scissors size={12} /></button>
                 <button className="icon-btn-sm" onClick={() => onResetKPI(id)} title="Reset KPI Data"><RefreshCcw size={12} /></button>
@@ -494,63 +503,6 @@ const KPINode = ({ data }: NodeProps<KPINodeProps>) => {
                     </button>
                 )}
             </div>
-
-            {isCommenting && (
-                <div
-                    className="node-comment-overlay nodrag nopan"
-                    onClick={e => e.stopPropagation()}
-                    style={{
-                        position: 'absolute',
-                        top: '100%',
-                        left: 0,
-                        right: 0,
-                        zIndex: 100,
-                        background: 'white',
-                        padding: '12px',
-                        borderRadius: '0 0 12px 12px',
-                        boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)',
-                        border: '1px solid #e2e8f0',
-                        marginTop: '-4px'
-                    }}
-                >
-                    <textarea
-                        ref={commentRef}
-                        className="comment-textarea"
-                        value={commentValue}
-                        onChange={e => setCommentValue(e.target.value)}
-                        placeholder="Add a comment..."
-                        style={{
-                            width: '100%',
-                            minHeight: '60px',
-                            border: '1px solid #cbd5e1',
-                            borderRadius: '6px',
-                            padding: '8px',
-                            fontSize: '12px',
-                            resize: 'vertical',
-                            outline: 'none',
-                            marginBottom: '8px'
-                        }}
-                    />
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-                        <button
-                            className="ghost-btn-sm"
-                            onClick={() => setIsCommenting(false)}
-                            style={{ fontSize: '11px', padding: '4px 8px' }}
-                        >
-                            Cancel
-                        </button>
-                        <button
-                            className="primary-btn-sm"
-                            onClick={handleCommentCommit}
-                            style={{ fontSize: '11px', padding: '4px 12px', background: '#3b82f6', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
-                        >
-                            Save
-                        </button>
-                    </div>
-                </div>
-            )}
-
-
 
             <div className="node-expansion-toggle" onClick={(e) => { e.stopPropagation(); onToggleExpand(id); }}>
                 {isExpanded ? <Minus size={14} /> : <Plus size={14} />}

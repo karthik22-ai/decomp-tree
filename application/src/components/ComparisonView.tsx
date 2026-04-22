@@ -4,6 +4,7 @@ import type { Scenario, DateRange, KPIData } from '../types';
 import { apiService } from '../services/api';
 import { BarChart3, Loader2, ArrowRightLeft, TrendingUp, TrendingDown, Minus, Table as TableIcon, BarChart as BarChartIcon, Edit3, X, Save } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import ScenarioSelector from './ScenarioSelector';
 
 interface ComparisonViewProps {
     scenarios: Record<string, Scenario>;
@@ -133,14 +134,14 @@ const ComparisonView: React.FC<ComparisonViewProps> = ({ scenarios, dateRange })
                 <div style={{ padding: '16px 24px', display: 'flex', alignItems: 'center', gap: '24px', backgroundColor: 'white' }}>
                     {/* Base Scenario Selector */}
                     <div style={{ flex: 1 }}>
-                        <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '6px' }}>Baseline Scenario</label>
-                        <select
-                            value={baseId}
-                            onChange={(e) => setBaseId(e.target.value)}
-                            style={{ width: '100%', backgroundColor: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '8px', padding: '8px 12px', fontSize: '13px', color: '#1E293B', fontWeight: 500, outline: 'none', cursor: 'pointer' }}
-                        >
-                            {Object.values(scenarios).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                        </select>
+                        <ScenarioSelector
+                            scenarios={scenarios}
+                            selectedIds={[baseId]}
+                            onSelect={(id) => setBaseId(id)}
+                            mode="single"
+                            label="Baseline Scenario"
+                            showActions={false}
+                        />
                     </div>
 
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', paddingTop: '18px' }}>
@@ -151,14 +152,14 @@ const ComparisonView: React.FC<ComparisonViewProps> = ({ scenarios, dateRange })
 
                     {/* Comparison Scenario Selector */}
                     <div style={{ flex: 1 }}>
-                        <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '6px' }}>Comparison Target</label>
-                        <select
-                            value={compId}
-                            onChange={(e) => setCompId(e.target.value)}
-                            style={{ width: '100%', backgroundColor: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '8px', padding: '8px 12px', fontSize: '13px', color: '#1E293B', fontWeight: 500, outline: 'none', cursor: 'pointer' }}
-                        >
-                            {Object.values(scenarios).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                        </select>
+                        <ScenarioSelector
+                            scenarios={scenarios}
+                            selectedIds={[compId]}
+                            onSelect={(id) => setCompId(id)}
+                            mode="single"
+                            label="Comparison Target"
+                            showActions={false}
+                        />
                     </div>
                 </div>
             </div>
