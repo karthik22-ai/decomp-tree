@@ -14,7 +14,7 @@ Modern React-based dashboard for Directed Graph Forecasting, built with Vite and
 
 - `src/components/`: Reusable UI components.
 - `src/features/`: Complex modules like the canvas and spreadsheet views.
-- `src/services/api.ts`: Centralized API client using Axios.
+- `src/services/api.ts`: Centralized API client using Native Fetch.
 - `src/store/`: State management (if using Zustand/Redux) or custom hooks.
 - `public/`: Static assets and icons.
 
